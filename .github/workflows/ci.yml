@@ -6,6 +6,21 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: hsj
+          POSTGRES_PASSWORD: hsj
+          POSTGRES_DB: hsj_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hsj"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://hsj:hsj@localhost:5432/hsj_test?schema=public
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -16,5 +31,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @hsj/shared build
       - run: pnpm typecheck
+      - run: pnpm --filter @hsj/server prisma:deploy
       - run: pnpm test
       - run: pnpm build

@@ -3,30 +3,43 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "nest start --watch",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo \"server: 暂无单元测试\"",
+    "test": "jest --runInBand",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:seed": "prisma db seed",
+    "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@hsj/shared": "workspace:*",
     "@nestjs/common": "11.2.7",
     "@nestjs/config": "4.0.4",
     "@nestjs/core": "11.2.7",
+    "@nestjs/jwt": "11.0.2",
     "@nestjs/platform-express": "11.2.7",
     "@prisma/client": "6.19.3",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "zod": "3.25.76"
   },
   "devDependencies": {
+    "@nestjs/cli": "11.0.24",
     "@types/express": "5.0.3",
+    "@types/jest": "29.5.14",
     "@types/node": "22.20.5",
+    "@types/supertest": "6.0.3",
+    "jest": "29.7.0",
     "prisma": "6.19.3",
+    "supertest": "7.3.1",
+    "ts-jest": "29.4.15",
     "tsx": "4.23.15",
     "typescript": "5.9.3"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }

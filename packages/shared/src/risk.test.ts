@@ -36,3 +36,16 @@ describe('RiskEngine', () => {
     expect(engine.scan('富含膳食纤维，早餐配酸奶很合适')).toHaveLength(0);
   });
 });
+
+describe('RiskEngine 白名单短语', () => {
+  it('命中词落在白名单短语里时放行，其他位置照常命中', () => {
+    const e = new RiskEngine(undefined, undefined, ['第一次']);
+    expect(e.scan('第一次吃无花果')).toHaveLength(0);
+    expect(e.scan('第一次吃，全国第一')).toHaveLength(1);
+  });
+
+  it('pass 级规则不产生命中', () => {
+    const e = new RiskEngine([{ category: '食养知识', level: 'pass', words: ['膳食纤维'] }]);
+    expect(e.scan('富含膳食纤维')).toHaveLength(0);
+  });
+});

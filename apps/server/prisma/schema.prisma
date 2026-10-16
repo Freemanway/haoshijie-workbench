@@ -73,10 +73,12 @@ model AuditLog {
 
 model KnowledgeItem {
   id        String   @id @default(cuid())
-  kind      String   // variety | origin | season | price | compliance_example
+  kind      String   // variety 品种 | origin 产地 | season 上市时间 | price 价格规格 | compliance 合规表述范例
   title     String
   content   String
   updatedAt DateTime @updatedAt
+
+  @@index([kind])
 }
 
 model FaqItem {
@@ -90,6 +92,7 @@ model FaqItem {
 
 model Asset {
   id        String   @id @default(cuid())
+  title     String
   url       String
   kind      String   // image | video
   tags      String[]
@@ -258,14 +261,17 @@ model RiskHitLog {
 }
 
 model RiskWord {
-  id        String   @id @default(cuid())
-  word      String
-  category  String
-  level     String   // block | warn | pass
-  platform  Platform?
-  whitelist Boolean  @default(false)
+  id         String    @id @default(cuid())
+  word       String
+  category   String
+  level      String    // block | warn | pass
+  platform   Platform? // 空 = 所有平台通用
+  whitelist  Boolean   @default(false) // 白名单词：即使命中其他规则也放行
+  suggestion String?   // 合规替换建议
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  @@unique([word, platform])
+  @@index([word])
 }
 
 // ---------- 线索与成交（PRD 6、9） ----------

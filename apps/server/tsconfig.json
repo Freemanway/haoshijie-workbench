@@ -4,11 +4,17 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "outDir": "dist",
-    "rootDir": "src",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "declaration": false,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "types": [
+      "node",
+      "jest"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

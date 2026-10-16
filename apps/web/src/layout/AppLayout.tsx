@@ -1,15 +1,20 @@
-import { Layout, Menu, Typography } from 'antd';
+import { Button, Layout, Menu, Space, Typography } from 'antd';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { ROLE_LABEL } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { NAV } from '../router';
 
 export function AppLayout() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { me, logout, can } = useAuth();
   const items = NAV.map((g) => ({
     type: 'group' as const,
     label: g.group,
-    children: g.items.map((i) => ({ key: `/${i.path}`, label: i.label })),
-  }));
+    children: g.items
+      .filter((i) => !i.roles || can(...i.roles))
+      .map((i) => ({ key: `/${i.path}`, label: i.label })),
+  })).filter((g) => g.children.length);
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -20,9 +25,20 @@ export function AppLayout() {
         </div>
         <Menu mode="inline" selectedKeys={[pathname]} items={items} onClick={(e) => navigate(e.key)} />
       </Layout.Sider>
-      <Layout.Content style={{ padding: 24 }}>
-        <Outlet />
-      </Layout.Content>
+      <Layout>
+        <Layout.Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <Space>
+            <Typography.Text>{me?.name}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {me?.roles.map((r) => ROLE_LABEL[r] ?? r).join('、')}
+            </Typography.Text>
+            <Button size="small" onClick={() => { logout(); navigate('/login'); }}>退出</Button>
+          </Space>
+        </Layout.Header>
+        <Layout.Content style={{ padding: 24 }}>
+          <Outlet />
+        </Layout.Content>
+      </Layout>
     </Layout>
   );
 }

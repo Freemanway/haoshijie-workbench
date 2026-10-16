@@ -1,10 +1,22 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from './layout/AppLayout';
+import { RequireAuth } from './lib/auth';
 import { AddressPage } from './pages/AddressPage';
+import { KnowledgePage } from './pages/KnowledgePage';
+import { LoginPage } from './pages/LoginPage';
 import { Placeholder } from './pages/Placeholder';
 import { RiskPage } from './pages/RiskPage';
+import { AccountsPage, MembersPage } from './pages/SettingsPages';
 
-export const NAV = [
+interface NavItem {
+  path: string;
+  label: string;
+  task: string;
+  /** 只对这些角色显示（管理员总能看到）；不填则所有成员可见 */
+  roles?: string[];
+}
+
+export const NAV: { group: string; items: NavItem[] }[] = [
   { group: '总览', items: [{ path: 'overview', label: '数据周报', task: 'M12' }] },
   {
     group: '内容',
@@ -29,14 +41,32 @@ export const NAV = [
       { path: 'kb', label: '品牌知识库', task: 'M2' },
     ],
   },
+  {
+    group: '设置',
+    items: [
+      { path: 'members', label: '成员与权限', task: 'M1', roles: ['ADMIN'] },
+      { path: 'accounts', label: '平台账号', task: 'M1' },
+    ],
+  },
 ];
 
-const built: Record<string, React.ReactNode> = { risk: <RiskPage />, leads: <AddressPage /> };
+const built: Record<string, React.ReactNode> = {
+  risk: <RiskPage />,
+  kb: <KnowledgePage />,
+  leads: <AddressPage />,
+  members: <MembersPage />,
+  accounts: <AccountsPage />,
+};
 
 export const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
   {
     path: '/',
-    element: <AppLayout />,
+    element: (
+      <RequireAuth>
+        <AppLayout />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <Navigate to="/overview" replace /> },
       ...NAV.flatMap((g) => g.items).map((i) => ({
