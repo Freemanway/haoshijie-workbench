@@ -1,0 +1,15 @@
+# 本地开发依赖：PostgreSQL 16（含 pgvector）与 Redis 7
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: hsj
+      POSTGRES_PASSWORD: hsj
+      POSTGRES_DB: hsj
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+volumes:
+  pgdata:

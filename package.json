@@ -1,0 +1,15 @@
+{
+  "name": "haoshijie-workbench",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev:web": "pnpm --filter @hsj/web dev",
+    "dev:server": "pnpm --filter @hsj/server dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:up": "docker compose up -d",
+    "db:migrate": "pnpm --filter @hsj/server prisma:migrate"
+  }
+}

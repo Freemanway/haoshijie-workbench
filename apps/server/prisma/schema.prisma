@@ -1,0 +1,351 @@
+// 好时节AI工作台 数据模型初版（任务 M0-2）
+// 对应 PRD 第 4–10 节。手机号、地址等个人信息以密文存储（*Enc），另存哈希（*Hash）用于去重匹配。
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- 账号与权限（PRD 10.1） ----------
+
+enum Role {
+  ADMIN      // 管理员
+  CONTENT    // 内容运营
+  REVIEWER   // 审核人
+  CS         // 客服
+  BIZ        // 招商（B端销售）
+  VIEWER     // 管理层（只读）
+}
+
+enum Platform {
+  XHS     // 小红书（一期）
+  DOUYIN  // 抖音（二期）
+  WECHAT_CHANNELS // 视频号（二期）
+}
+
+enum Audience {
+  C
+  B
+}
+
+model User {
+  id        String   @id @default(cuid())
+  wecomId   String   @unique // 企业微信成员 ID，用于扫码登录与消息推送
+  name      String
+  roles     Role[]
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  reviews   ReviewLog[]
+  leads     Lead[]      @relation("LeadOwner")
+  followUps FollowUp[]
+}
+
+model PlatformAccount {
+  id           String   @id @default(cuid())
+  platform     Platform
+  name         String
+  audience     Audience // 账号主要面向的客群
+  externalId   String?
+  dailyPostCap Int      @default(2) // 发布频率上限（PRD 10.2 平台合规）
+  createdAt    DateTime @default(now())
+
+  schedules     ScheduleItem[]
+  conversations Conversation[]
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String   // 如 lead.export、lead.reveal_phone
+  target    String?
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([action, createdAt])
+}
+
+// ---------- 知识库与素材（PRD 4.1） ----------
+
+model KnowledgeItem {
+  id        String   @id @default(cuid())
+  kind      String   // variety | origin | season | price | compliance_example
+  title     String
+  content   String
+  updatedAt DateTime @updatedAt
+}
+
+model FaqItem {
+  id        String   @id @default(cuid())
+  category  String   // 价格规格、品种区别、上市时间、配送范围、保存方法、售后、企业采购、代理政策
+  question  String
+  answer    String
+  audience  Audience?
+  updatedAt DateTime @updatedAt
+}
+
+model Asset {
+  id        String   @id @default(cuid())
+  url       String
+  kind      String   // image | video
+  tags      String[]
+  createdAt DateTime @default(now())
+}
+
+// ---------- 内容生产（PRD 4.1–4.5） ----------
+
+enum TopicStatus {
+  IDLE       // 待用
+  SCHEDULED  // 已排期
+  PUBLISHED  // 已发布
+  ARCHIVED   // 归档
+}
+
+enum TopicSource {
+  AI
+  MANUAL
+  INBOX_FAQ // 私信高频问题反哺
+}
+
+model Topic {
+  id            String      @id @default(cuid())
+  title         String
+  audience      Audience
+  category      String
+  platforms     Platform[]
+  seasonTag     String?
+  status        TopicStatus @default(IDLE)
+  source        TopicSource @default(MANUAL)
+  reason        String?     // AI 给出的选题理由
+  suggestedDate DateTime?
+  weekOf        DateTime?   // 所属的每周选题清单（周一日期）
+  createdAt     DateTime    @default(now())
+
+  drafts Draft[]
+  leads  Lead[]
+}
+
+enum DraftStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PUBLISHED
+  PUBLISH_FAILED
+}
+
+model Draft {
+  id        String      @id @default(cuid())
+  topicId   String
+  platform  Platform
+  status    DraftStatus @default(DRAFT)
+  rejectReason String?
+  createdAt DateTime    @default(now())
+
+  topic     Topic          @relation(fields: [topicId], references: [id])
+  versions  DraftVersion[]
+  reviews   ReviewLog[]
+  schedules ScheduleItem[]
+}
+
+model DraftVersion {
+  id          String   @id @default(cuid())
+  draftId     String
+  index       Int
+  title       String
+  body        String
+  tags        String[]
+  coverPrompt String?
+  chosen      Boolean  @default(false)
+  modelName   String?  // 生成所用模型，AI 输出可追溯
+  createdAt   DateTime @default(now())
+
+  draft Draft @relation(fields: [draftId], references: [id])
+
+  @@unique([draftId, index])
+}
+
+model ReviewLog {
+  id         String   @id @default(cuid())
+  draftId    String
+  reviewerId String
+  action     String   // approve | reject | edit | comment
+  note       String?
+  before     String?
+  after      String?
+  createdAt  DateTime @default(now())
+
+  draft    Draft @relation(fields: [draftId], references: [id])
+  reviewer User  @relation(fields: [reviewerId], references: [id])
+}
+
+model ScheduleItem {
+  id          String    @id @default(cuid())
+  draftId     String
+  accountId   String
+  publishAt   DateTime
+  remindedAt  DateTime?
+  publishedAt DateTime?
+  postUrl     String?   // 人工回填的作品链接
+  // 作品数据（一期人工回填，二期接口回收）
+  reads       Int?
+  likes       Int?
+  saves       Int?
+  comments    Int?
+
+  draft   Draft           @relation(fields: [draftId], references: [id])
+  account PlatformAccount @relation(fields: [accountId], references: [id])
+
+  @@index([publishAt])
+}
+
+// ---------- 私信接待（PRD 5） ----------
+
+enum ConversationStatus {
+  AI_HANDLING
+  WAITING_AGENT
+  AGENT_HANDLING
+  DIVERTED // 已引流
+  CLOSED
+}
+
+model Conversation {
+  id             String             @id @default(cuid())
+  accountId      String
+  externalUserId String
+  nickname       String?
+  sourcePostUrl  String?
+  status         ConversationStatus @default(AI_HANDLING)
+  audience       Audience?
+  intent         String?            // high | medium | low
+  handoffReason  String?
+  summary        String?
+  updatedAt      DateTime           @updatedAt
+
+  account  PlatformAccount @relation(fields: [accountId], references: [id])
+  messages Message[]
+  lead     Lead?
+
+  @@unique([accountId, externalUserId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  sender         String   // customer | ai | agent | system
+  text           String
+  blockedText    String?  // 被风控拦截的原回复
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model RiskHitLog {
+  id        String   @id @default(cuid())
+  source    String   // draft | reply
+  sourceId  String
+  word      String
+  level     String
+  category  String
+  createdAt DateTime @default(now())
+
+  @@index([word, createdAt])
+}
+
+model RiskWord {
+  id        String   @id @default(cuid())
+  word      String
+  category  String
+  level     String   // block | warn | pass
+  platform  Platform?
+  whitelist Boolean  @default(false)
+
+  @@unique([word, platform])
+}
+
+// ---------- 线索与成交（PRD 6、9） ----------
+
+enum LeadStatus {
+  NEW
+  ADDED_WECOM
+  FOLLOWING
+  WON
+  LOST
+}
+
+model Lead {
+  id             String     @id @default(cuid())
+  audience       Audience
+  conversationId String?    @unique
+  topicId        String?
+  sourcePlatform Platform?
+  sourceAccount  String?
+  sourcePostUrl  String?
+  wecomChannel   String?    // 渠道活码参数
+  nickname       String?
+  name           String?
+  phoneEnc       String?
+  phoneHash      String?    @unique
+  wechat         String?
+  intent         String?
+  intentDetail   Json?
+  status         LeadStatus @default(NEW)
+  ownerId        String?
+  nextFollowAt   DateTime?
+  createdAt      DateTime   @default(now())
+
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  topic        Topic?        @relation(fields: [topicId], references: [id])
+  owner        User?         @relation("LeadOwner", fields: [ownerId], references: [id])
+  addresses    Address[]
+  followUps    FollowUp[]
+  orders       Order[]
+}
+
+model Address {
+  id          String   @id @default(cuid())
+  leadId      String
+  receiverEnc String
+  phoneEnc    String
+  province    String
+  city        String
+  district    String
+  detailEnc   String
+  confirmed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+}
+
+model FollowUp {
+  id        String   @id @default(cuid())
+  leadId    String
+  userId    String
+  note      String
+  createdAt DateTime @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Order {
+  id           String   @id @default(cuid())
+  tool         String   // ktt | jielong | huacheng | manual
+  externalNo   String?
+  leadId       String?
+  amountCents  Int
+  phoneHash    String?
+  receiverHash String?
+  matchedBy    String?  // phone | receiver_address | manual
+  orderedAt    DateTime
+  importedAt   DateTime @default(now())
+
+  lead Lead? @relation(fields: [leadId], references: [id])
+
+  @@unique([tool, externalNo])
+}
