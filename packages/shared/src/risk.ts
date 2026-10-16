@@ -50,6 +50,9 @@ export const DEFAULT_SUGGESTIONS: Record<string, string> = {
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** 字与字之间允许空白或常见分隔符，识别“润 肠 通 便”“养-胃”这类拆字。 */
+const fuzzy = (w: string) => new RegExp([...w].map(escapeRegExp).join('[\\s\\-_·.*]*'), 'gi');
+
 interface CompiledRule {
   re: RegExp;
   word: string;
@@ -59,33 +62,41 @@ interface CompiledRule {
 
 export class RiskEngine {
   private readonly compiled: CompiledRule[];
+  private readonly whitelist: RegExp[];
 
+  /**
+   * @param whitelist 白名单短语：命中词完全落在白名单短语里时放行，
+   *   例如白名单“第一次”可放行“第一次吃”里的“第一”。
+   */
   constructor(
     rules: RiskRule[] = DEFAULT_RULES,
     private readonly suggestions: Record<string, string> = DEFAULT_SUGGESTIONS,
     whitelist: string[] = [],
   ) {
-    const allowed = new Set(whitelist);
-    this.compiled = rules.flatMap((r) =>
-      r.words
-        .filter((w) => !allowed.has(w))
-        .map((w) => ({
-          // 字与字之间允许空白或常见分隔符，识别“润 肠 通 便”“养-胃”这类拆字
-          re: new RegExp([...w].map(escapeRegExp).join('[\\s\\-_·.*]*'), 'gi'),
-          word: w,
-          level: r.level,
-          category: r.category,
-        })),
-    );
+    this.compiled = rules
+      .filter((r) => r.level !== 'pass')
+      .flatMap((r) =>
+        r.words.map((w) => ({ re: fuzzy(w), word: w, level: r.level, category: r.category })),
+      );
+    this.whitelist = whitelist.filter(Boolean).map(fuzzy);
   }
 
   /** 返回不重叠的命中，同一位置优先取更长的词。 */
   scan(text: string): RiskHit[] {
+    const safe: Array<[number, number]> = [];
+    for (const re of this.whitelist) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text))) safe.push([m.index, m.index + m[0].length]);
+    }
     const hits: RiskHit[] = [];
     for (const c of this.compiled) {
       c.re.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = c.re.exec(text))) {
+        const s = m.index;
+        const e = s + m[0].length;
+        if (safe.some(([a, b]) => a <= s && e <= b)) continue;
         hits.push({
           start: m.index,
           end: m.index + m[0].length,
