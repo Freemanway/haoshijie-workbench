@@ -59,7 +59,23 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `POST /api/risk/check` `{ text, platform?, source?, sourceId? }` | 风控检测，返回命中词、级别和替换建议；带来源时记录命中日志 | M5 |
 | `GET/POST/PATCH/DELETE /api/risk/words` | 风控词库维护（写操作限审核人），改完立即生效 | M5 |
 | `GET /api/risk/stats/top-words?days=7` | 近 N 天高频命中词 | M5 |
+| `GET /api/ai/status`、`GET /api/ai/usage?days=30`、`GET /api/ai/calls?refType=&refId=` | 当前模型、调用量与费用（管理员）、某个选题或稿件的全部 AI 调用记录 | M4-1 |
+| `GET/PUT /api/topics/settings`、`/api/topics/categories` | 每周配额、C/B 比例、季节节点、自动生成开关；选题类别增删 | M3-1 |
+| `GET /api/topics/weekly?weekOf=`、`POST /api/topics/weekly/generate`、`POST /api/topics/weekly/confirm` | 每周选题清单：查看、AI 生成（默认下周）、确认后批量生成稿件 | M3-2、M3-3 |
+| `GET/POST/PATCH/DELETE /api/topics`、`POST /api/topics/:id/replace` | 选题库维护；替换清单里的一个选题 | M3 |
+| `GET/POST /api/drafts`、`GET /api/drafts/:id`、`POST /api/drafts/:id/retry` | 稿件列表、按选题生成小红书稿件（默认 2 个版本）、详情（含风控和规格检查、推荐素材）、失败重试 | M4-2 |
+| `POST /api/drafts/:id/rewrite`、`PATCH /api/drafts/:id/versions/:vid`、`POST …/choose` | AI 改写（整篇重写、改语气、缩短、扩写、按驳回原因重写）、人工修改、设为采用；每次都生成新版本 | M4-3 |
 | `POST /api/leads/parse-address` `{ raw }` | 整段地址拆成收件人、电话、省市区、详细地址，校验配送范围 | M10-2 |
+
+## 大模型
+
+- 模型网关只依赖 OpenAI 兼容接口，DeepSeek、通义千问、豆包、Kimi、智谱等国内模型配置 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 即可切换，见 `.env.example`。
+- 不配置时使用演示模型，输出固定的示例内容，页面会提示“当前为演示模型”。测试一律走演示模型。
+- 提示词模板在 `apps/server/src/ai/prompts.ts`，每个模板带版本号；每次调用都写入 `LlmCall`（模板版本、输入输出、tokens、费用、耗时），稿件版本记录生成它的调用。
+- 输出不合格（格式不对、字数或篇数不符）时带上问题自动重试一次，仍不合格的保留下来并在页面标出问题，由运营修改。
+- 知识库里的“合规口径”条目作为改写规则交给模型，不当作事实写进稿件。
+- 每周四 9:00（北京时间）自动生成下周选题清单，可在“选题清单 > 配额与类别”里关闭，部署时也可用 `CRON_ENABLED=false` 关闭。
+- 稿件生成在进程内排队（同时最多 2 个）；多实例部署时换成 Redis + BullMQ。
 
 ## 约定
 

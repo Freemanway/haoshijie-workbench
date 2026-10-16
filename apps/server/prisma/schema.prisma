@@ -102,6 +102,7 @@ model Asset {
 // ---------- 内容生产（PRD 4.1–4.5） ----------
 
 enum TopicStatus {
+  PROPOSED   // AI 建议，待运营确认（每周选题清单）
   IDLE       // 待用
   SCHEDULED  // 已排期
   PUBLISHED  // 已发布
@@ -127,12 +128,59 @@ model Topic {
   suggestedDate DateTime?
   weekOf        DateTime?   // 所属的每周选题清单（周一日期）
   createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   drafts Draft[]
   leads  Lead[]
+
+  @@index([weekOf])
+  @@index([status])
+}
+
+/** 选题类别，预置 C 端 6 类、B 端 5 类，可增删（PRD 4.1）。 */
+model TopicCategory {
+  id       String   @id @default(cuid())
+  audience Audience
+  name     String
+  sort     Int      @default(0)
+
+  @@unique([audience, name])
+}
+
+/** 系统配置（每周选题配额、季节节点等），值为 JSON。 */
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/** 大模型调用日志：每次调用都留痕，可追溯到提示词模板版本、输入输出和费用（M4-1）。 */
+model LlmCall {
+  id           String   @id @default(cuid())
+  purpose      String   // topics | draft | rewrite …
+  template     String   // 提示词模板名@版本
+  provider     String
+  model        String
+  userId       String?
+  refType      String?  // topic | draft
+  refId        String?
+  messages     Json
+  output       String?
+  ok           Boolean
+  error        String?
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costMilli    Int      @default(0) // 费用，单位：0.001 元
+  latencyMs    Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([refType, refId])
 }
 
 enum DraftStatus {
+  GENERATING        // AI 生成中
+  GENERATE_FAILED   // AI 生成失败，可重试
   DRAFT
   PENDING_REVIEW
   APPROVED
@@ -148,7 +196,9 @@ model Draft {
   platform  Platform
   status    DraftStatus @default(DRAFT)
   rejectReason String?
+  error     String?     // 生成失败原因
   createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   topic     Topic          @relation(fields: [topicId], references: [id])
   versions  DraftVersion[]
@@ -164,8 +214,11 @@ model DraftVersion {
   body        String
   tags        String[]
   coverPrompt String?
+  imageTips   String[] // 配图建议
   chosen      Boolean  @default(false)
-  modelName   String?  // 生成所用模型，AI 输出可追溯
+  modelName   String?  // 生成所用模型，AI 输出可追溯；人工修改为空
+  note        String?  // 这个版本怎么来的：首次生成、改语气、按驳回原因重写、人工修改…
+  llmCallId   String?
   createdAt   DateTime @default(now())
 
   draft Draft @relation(fields: [draftId], references: [id])
