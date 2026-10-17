@@ -69,7 +69,8 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 
 ## 大模型
 
-- 模型网关只依赖 OpenAI 兼容接口，DeepSeek、通义千问、豆包、Kimi、智谱等国内模型配置 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL` 即可切换，见 `.env.example`。
+- 当前选用 DeepSeek（`deepseek-chat`），`.env.example` 已填好接口地址和模型名，部署时只需填 `LLM_API_KEY`。填好后运行 `pnpm --filter @hsj/server llm:check`，会发一次请求并实际生成一篇小红书稿件，检查格式和规格。
+- 模型网关只依赖 OpenAI 兼容接口，换模型只改 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，见 `.env.example`。
 - 不配置时使用演示模型，输出固定的示例内容，页面会提示“当前为演示模型”。测试一律走演示模型。
 - 提示词模板在 `apps/server/src/ai/prompts.ts`，每个模板带版本号；每次调用都写入 `LlmCall`（模板版本、输入输出、tokens、费用、耗时），稿件版本记录生成它的调用。
 - 输出不合格（格式不对、字数或篇数不符）时带上问题自动重试一次，仍不合格的保留下来并在页面标出问题，由运营修改。

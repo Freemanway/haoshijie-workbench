@@ -4,7 +4,10 @@ import { Prisma, Role } from '@prisma/client';
 import { Roles } from '../common/auth.decorators';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromptTemplate } from './prompts';
+import { extractJson } from './json';
 import { ChatMessage, LlmProvider, MockProvider, OpenAiCompatibleProvider } from './providers';
+
+export { extractJson };
 
 export interface RunContext {
   userId?: string;
@@ -20,16 +23,6 @@ export interface RunResult<O> {
   model: string;
   /** 重试后仍未解决的问题（例如字数超限），交给运营修改 */
   problems: string[];
-}
-
-/** 从模型输出中取出 JSON（兼容包在 ```json 代码块里的情况）。 */
-export function extractJson(text: string): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const raw = fenced ? fenced[1] : text;
-  const start = raw.search(/[[{]/);
-  const end = Math.max(raw.lastIndexOf('}'), raw.lastIndexOf(']'));
-  if (start < 0 || end < start) throw new Error('模型输出里没有 JSON');
-  return JSON.parse(raw.slice(start, end + 1));
 }
 
 /**
