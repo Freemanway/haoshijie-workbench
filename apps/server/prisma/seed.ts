@@ -1,10 +1,10 @@
 /**
- * 初始数据：风控初始词库（PRD 7.1）、首位管理员、知识库与 FAQ 骨架。
+ * 初始数据：风控初始词库（PRD 7.1）、首位管理员、知识库与 FAQ 骨架、选题类别预置（PRD 4.1）。
  * 可重复执行，已存在的数据不会重复插入。
  * 运行：pnpm --filter @hsj/server db:seed
  */
 import { PrismaClient, Role } from '@prisma/client';
-import { DEFAULT_RULES, DEFAULT_SUGGESTIONS } from '@hsj/shared';
+import { DEFAULT_RULES, DEFAULT_SUGGESTIONS, DEFAULT_TOPIC_CATEGORIES } from '@hsj/shared';
 
 const prisma = new PrismaClient();
 
@@ -64,6 +64,13 @@ async function main() {
         { category: '保存方法', question: '无花果怎么保存？', answer: '常温 1 天内吃完；冷藏单层平铺，3 天内口感最好。' },
         { category: '代理政策', question: '有没有代理价？', answer: '代理与批发由招商负责人一对一沟通。', audience: 'B' },
       ],
+    });
+  }
+  // 选题类别：C 端 6 类、B 端 5 类
+  for (const audience of ['C', 'B'] as const) {
+    await prisma.topicCategory.createMany({
+      data: DEFAULT_TOPIC_CATEGORIES[audience].map((name, sort) => ({ audience, name, sort })),
+      skipDuplicates: true,
     });
   }
 }

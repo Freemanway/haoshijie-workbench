@@ -23,7 +23,7 @@ export function AppLayout() {
           <Typography.Title level={5} style={{ margin: 0 }}>好时节·AI工作台</Typography.Title>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>无花果产地直供 · 内部系统</Typography.Text>
         </div>
-        <Menu mode="inline" selectedKeys={[pathname]} items={items} onClick={(e) => navigate(e.key)} />
+        <Menu mode="inline" selectedKeys={[`/${pathname.split('/')[1]}`]} items={items} onClick={(e) => navigate(e.key)} />
       </Layout.Sider>
       <Layout>
         <Layout.Header style={{ background: '#fff', padding: '0 24px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>

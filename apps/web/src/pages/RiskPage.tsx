@@ -2,6 +2,7 @@ import type { RiskHit } from '@hsj/shared';
 import { App, Card, Form, Input, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd';
 import { useEffect, useState } from 'react';
 import { CrudTable } from '../components/CrudTable';
+import { RiskHighlight } from '../components/RiskHighlight';
 import { api, PLATFORM_LABEL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -23,22 +24,6 @@ interface RiskWord {
   platform: string | null;
   whitelist: boolean;
   suggestion: string | null;
-}
-
-function Highlighted({ text, hits }: { text: string; hits: RiskHit[] }) {
-  const parts: React.ReactNode[] = [];
-  let i = 0;
-  hits.forEach((h, k) => {
-    parts.push(text.slice(i, h.start));
-    parts.push(
-      <mark key={k} style={{ background: h.level === 'block' ? '#FBE4E2' : '#FBF0DC', padding: '0 2px' }}>
-        {h.matched}
-      </mark>,
-    );
-    i = h.end;
-  });
-  parts.push(text.slice(i));
-  return <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.9 }}>{parts}</div>;
 }
 
 /** 用后端词库实时检测，与稿件和自动回复走同一套规则。 */
@@ -65,7 +50,7 @@ function Tester() {
       >
         <Input.TextArea id="risk-text" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
         <div style={{ marginTop: 12 }}>
-          <Highlighted text={text} hits={result.hits} />
+          <RiskHighlight text={text} hits={result.hits} />
         </div>
       </Card>
       <Card title={result.blocked ? `命中 ${result.hits.length} 处，含拦截词，不能发布` : `命中 ${result.hits.length} 处`}>

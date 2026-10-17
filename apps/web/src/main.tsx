@@ -9,7 +9,13 @@ import { router } from './router';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: '#7A2E57', borderRadius: 8 } }}>
+    <ConfigProvider locale={zhCN} theme={{
+        token: { colorPrimary: '#7A2E57', borderRadius: 8 },
+        components: {
+          Table: { rowSelectedBg: '#F7F0F4', rowSelectedHoverBg: '#F1E6EC' },
+          Menu: { itemSelectedBg: '#F3E8EE' },
+        },
+      }}>
       <AntApp>
         <AuthProvider>
           <RouterProvider router={router} />

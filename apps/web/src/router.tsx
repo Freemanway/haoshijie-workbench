@@ -2,11 +2,13 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from './layout/AppLayout';
 import { RequireAuth } from './lib/auth';
 import { AddressPage } from './pages/AddressPage';
+import { DraftDetailPage, DraftsPage } from './pages/DraftsPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { Placeholder } from './pages/Placeholder';
 import { RiskPage } from './pages/RiskPage';
 import { AccountsPage, MembersPage } from './pages/SettingsPages';
+import { TopicsPage } from './pages/TopicsPage';
 
 interface NavItem {
   path: string;
@@ -22,7 +24,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
     group: '内容',
     items: [
       { path: 'topics', label: '选题清单', task: 'M3' },
-      { path: 'drafts', label: '稿件审核', task: 'M4、M6' },
+      { path: 'drafts', label: '稿件', task: 'M4、M6' },
       { path: 'schedule', label: '排期发布', task: 'M7' },
     ],
   },
@@ -51,6 +53,8 @@ export const NAV: { group: string; items: NavItem[] }[] = [
 ];
 
 const built: Record<string, React.ReactNode> = {
+  topics: <TopicsPage />,
+  drafts: <DraftsPage />,
   risk: <RiskPage />,
   kb: <KnowledgePage />,
   leads: <AddressPage />,
@@ -73,6 +77,7 @@ export const router = createBrowserRouter([
         path: i.path,
         element: built[i.path] ?? <Placeholder title={i.label} task={i.task} />,
       })),
+      { path: 'drafts/:id', element: <DraftDetailPage /> },
     ],
   },
 ]);

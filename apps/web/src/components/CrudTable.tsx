@@ -19,6 +19,8 @@ interface Props<T extends { id: string }> {
   toBody?: (values: Record<string, unknown>) => unknown;
   initialValues?: Record<string, unknown>;
   extra?: React.ReactNode;
+  /** 每行额外的操作按钮，reload 用于操作后刷新列表 */
+  rowActions?: (row: T, reload: () => void) => React.ReactNode;
 }
 
 /** 通用的“列表 + 新增/编辑弹窗 + 删除”表格，后端校验错误会落到对应表单项上。 */
@@ -81,17 +83,17 @@ export function CrudTable<T extends { id: string }>(p: Props<T>) {
     }
   };
 
-  const columns: TableColumnsType<T> = p.canEdit
+  const columns: TableColumnsType<T> = p.canEdit || p.rowActions
     ? [
         ...p.columns,
         {
           title: '操作',
           key: '_ops',
-          width: 120,
           render: (_, row) => (
             <Space size={4}>
-              <Button type="link" size="small" onClick={() => open(row)}>编辑</Button>
-              {p.canDelete !== false && (
+              {p.rowActions?.(row, () => void load())}
+              {p.canEdit && <Button type="link" size="small" onClick={() => open(row)}>编辑</Button>}
+              {p.canEdit && p.canDelete !== false && (
                 <Popconfirm title={`删除这条${p.entity}？`} onConfirm={() => remove(row)}>
                   <Button type="link" size="small" danger>删除</Button>
                 </Popconfirm>
