@@ -1,0 +1,27 @@
+# 好时节AI工作台 接口服务镜像（M13-2）
+# 境内构建时把基础镜像换成云厂商镜像仓库里的同版本，例如：
+#   docker build --build-arg NODE_IMAGE=registry.cn-hangzhou.aliyuncs.com/<命名空间>/node:22-alpine ...
+ARG NODE_IMAGE=node:22-alpine
+FROM ${NODE_IMAGE}
+RUN corepack enable
+ENV TZ=Asia/Shanghai
+WORKDIR /app
+
+# 先装依赖，代码改动时可复用这一层缓存
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
+COPY apps/server/package.json apps/server/
+COPY apps/web/package.json apps/web/
+COPY packages/shared/package.json packages/shared/
+COPY apps/server/prisma apps/server/prisma
+RUN pnpm install --frozen-lockfile --filter @hsj/server... --filter @hsj/shared
+
+COPY packages/shared packages/shared
+COPY apps/server apps/server
+RUN pnpm --filter @hsj/shared build && pnpm --filter @hsj/server build
+
+# 保留 prisma、tsx 等开发依赖：迁移（prisma:deploy）、初始化（db:seed）、自检（preflight）、llm:check 都在这个镜像里跑
+ENV NODE_ENV=production PORT=3000
+WORKDIR /app/apps/server
+EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
+CMD ["node", "dist/main.js"]

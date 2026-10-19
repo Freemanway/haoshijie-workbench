@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { addDays, maskPhone, workMinutesBetween } from '@hsj/shared';
 import { Audience, LeadStatus, Platform, Prisma, Role } from '@prisma/client';
+import { z } from 'zod';
 import { AiService } from '../ai/ai.module';
 import { reportInsight, ReportInsightOut } from '../ai/prompts';
 import { AuditService } from '../audit/audit.module';
@@ -12,6 +13,31 @@ import { InboxService } from '../inbox/inbox.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../wecom/wecom.module';
 import { SheetData, writeXlsx } from './xlsx';
+
+const num = z.number().min(0).max(1e6).nullable().optional();
+/** 上线前基线（PRD 11.2）：人工方式下每周的数字，加微率、成交率按百分数填；目标值同样口径。 */
+const BaselineFigures = z.object({
+  weeklyPosts: num,
+  minutesPerPost: num,
+  weeklyConsults: num,
+  firstResponseMin: num,
+  aiSolveRate: num,
+  weeklyLeadsC: num,
+  weeklyLeadsB: num,
+  wecomRateC: num,
+  wonRateC: num,
+  wonRateB: num,
+  riskMisses: num,
+  penalties: num,
+});
+export const BaselineInput = z.object({
+  period: z.string().trim().max(60).default(''),
+  note: z.string().trim().max(500).default(''),
+  baseline: BaselineFigures,
+  target: BaselineFigures.default({}),
+});
+export type BaselineInput = z.infer<typeof BaselineInput>;
+const BASELINE_KEY = 'report.baseline';
 
 export interface ReportQuery {
   from: string;
@@ -416,6 +442,18 @@ export class ReportsService {
     const r = await this.prisma.report.findUnique({ where: { id } });
     if (!r) throw new NotFoundException('报告不存在');
     return r;
+  }
+
+  async baseline() {
+    const row = await this.prisma.setting.findUnique({ where: { key: BASELINE_KEY } });
+    return row ? { ...(row.value as object), updatedAt: row.updatedAt } : null;
+  }
+
+  async saveBaseline(me: AuthUser, input: BaselineInput) {
+    const value = { ...input, recordedBy: me.name } as unknown as Prisma.InputJsonValue;
+    await this.prisma.setting.upsert({ where: { key: BASELINE_KEY }, create: { key: BASELINE_KEY, value }, update: { value } });
+    await this.audit.log(me.id, 'report.baseline', BASELINE_KEY, { period: input.period });
+    return this.baseline();
   }
 
   private get cronOn() {

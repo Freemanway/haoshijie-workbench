@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>好时节AI工作台</title>
+    <style>
+      /* 手机上表格保持可读的列宽，左右滑动查看，不把每列挤成竖排 */
+      @media (max-width: 768px) {
+        .ant-table-content { overflow-x: auto; }
+        .ant-table-content > table { min-width: 640px !important; }
+        .ant-table-thead > tr > th { white-space: nowrap; }
+        .ant-table-tbody > tr > td { min-width: 80px; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

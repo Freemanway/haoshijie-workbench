@@ -35,6 +35,7 @@ export class AiService {
   private readonly provider: LlmProvider | null;
   private readonly priceIn: number;
   private readonly priceOut: number;
+  private readonly mockLatency: number;
 
   constructor(
     config: ConfigService,
@@ -56,6 +57,7 @@ export class AiService {
     // 单价：元 / 百万 tokens
     this.priceIn = Number(config.get('LLM_PRICE_INPUT', '0')) || 0;
     this.priceOut = Number(config.get('LLM_PRICE_OUTPUT', '0')) || 0;
+    this.mockLatency = Number(config.get('LLM_MOCK_LATENCY_MS', '0')) || 0;
   }
 
   get status() {
@@ -65,7 +67,7 @@ export class AiService {
   }
 
   async run<I, O>(tpl: PromptTemplate<I, O>, input: I, ctx: RunContext = {}): Promise<RunResult<O>> {
-    const provider = this.provider ?? new MockProvider(() => JSON.stringify(tpl.mock(input)));
+    const provider = this.provider ?? new MockProvider(() => JSON.stringify(tpl.mock(input)), this.mockLatency);
     const messages: ChatMessage[] = [
       { role: 'system', content: tpl.system },
       { role: 'user', content: tpl.user(input) },

@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Module, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Module, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { Platform, Role } from '@prisma/client';
 import type { Response } from 'express';
 import { z } from 'zod';
 import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { ZodPipe } from '../common/zod.pipe';
 import { InboxModule } from '../inbox/inbox.module';
-import { ReportQuery, ReportsService } from './reports.service';
+import { BaselineInput, ReportQuery, ReportsService } from './reports.service';
 
 const q = (r: Record<string, string>): ReportQuery => ({ from: r.from, to: r.to, platform: (r.platform || undefined) as Platform | undefined, accountId: r.accountId || undefined });
 const GenerateInput = z.object({
@@ -32,6 +32,17 @@ class ReportsController {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name)}`);
     res.end(buf);
+  }
+
+  @Get('baseline')
+  baseline() {
+    return this.reports.baseline();
+  }
+
+  @Roles(Role.ADMIN)
+  @Put('baseline')
+  saveBaseline(@CurrentUser() me: AuthUser, @Body(new ZodPipe(BaselineInput)) b: BaselineInput) {
+    return this.reports.saveBaseline(me, b);
   }
 
   @Get()

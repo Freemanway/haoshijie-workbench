@@ -5,6 +5,8 @@
 - 产品需求文档：<https://claude.ai/code/artifact/167b1d6c-be3d-462f-9a10-5a705036649b>
 - 一期可交互原型：<https://claude.ai/artifact/7wdYQDirLT7Ujyhb751Vu3>
 - 研发任务拆解与技术方案：<https://claude.ai/code/artifact/d4e70245-904c-422e-9570-55ffd7524144>
+- 试用验收与客服培训：<https://claude.ai/code/artifact/4860ba0d-d398-41ad-9ce5-aedbad1d96ac>
+- 上线：[上线手册](docs/上线手册.md)、[压测记录](docs/压测记录.md)
 
 ## 目录
 
@@ -13,6 +15,8 @@
 | `apps/web` | 管理后台与客服 H5：React 19 + Vite + Ant Design 5 |
 | `apps/server` | 后端服务：NestJS 11 + Prisma 6（PostgreSQL） |
 | `packages/shared` | 前后端共用的业务规则：内容风控词库匹配、收货地址拆分 |
+| `deploy` | 生产部署：接口服务和前端镜像、nginx、docker compose |
+| `docs` | 上线手册、压测记录 |
 
 ## 本地开发
 
@@ -93,6 +97,7 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `GET /api/reports/dashboard?from=&to=&platform=&accountId=` | 数据周报看板：内容、客服、C/B 端客资、转化漏斗，并和等长的上一期环比；按北京时间实时计算 | M12-1、M12-2 |
 | `GET /api/reports`、`GET /api/reports/:id`、`POST /api/reports/generate` `{ kind, from?, to?, push }` | 周报 / 月报快照（含 AI 解读）；每周一 9:00 生成上周周报、每月 1 日生成上月月报并推送企业微信（管理员、只读、内容岗）；管理员可手动生成 | M12-3 |
 | `GET /api/reports/export?from=&to=&platform=&accountId=` | 明细 Excel：汇总、作品、会话，管理员另含脱敏的线索表（记导出日志）；看板导出 PDF 走浏览器打印 | M12-3 |
+| `GET /api/reports/baseline`、`PUT /api/reports/baseline` `{ period, note, baseline, target }` | 上线前基线和目标（PRD 11.2，人工方式下的每周数字）；看板对比本期，管理员录入并记日志 | M13-1 |
 
 ## 大模型
 
@@ -111,7 +116,8 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 - 手机号、收货地址加密存储（`FIELD_ENCRYPTION_KEY`，AES-256-GCM），手机号另存 HMAC 用于去重和匹配；生产环境必须配置密钥。列表和管理层只看脱敏数据，查看明文、导出都记审计日志。
 - 线索：私信里中高意向、要人工、谈合作、投诉的会话自动建档，客户留手机号也会建档；同手机号或同平台用户 ID 合并成一条并保留每次来源。新线索 B 端分给招商、C 端客服轮流分配并提醒负责人；到下次跟进时间、新线索超过时限（默认 24 小时）没跟进，提醒负责人（各一次）。
 - 客户在私信里发整段地址：AI 接待时回显核对（只露手机尾号，附上用途告知），客户回“确认”后地址标记已确认；不在配送范围的转人工。人工接待中识别到的地址先存为待确认，在线索里确认。
-- 稿件生成在进程内排队（同时最多 2 个）；多实例部署时换成 Redis + BullMQ。
+- 稿件生成在进程内排队（同时最多 2 个）；收件箱同时处理 `INBOX_CONCURRENCY` 条（默认 8，估算方法见[压测记录](docs/压测记录.md)）。多实例部署时换成 Redis + BullMQ。
+- 上线前运行 `pnpm --filter @hsj/server preflight` 检查生产配置和基础数据；`loadtest` 按咨询峰值压测收件箱（只对测试环境）。
 
 ## 约定
 

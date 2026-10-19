@@ -1,6 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from './layout/AppLayout';
-import { RequireAuth } from './lib/auth';
+import { RequireAuth, RequireRole } from './lib/auth';
 import { DraftDetailPage, DraftsPage } from './pages/DraftsPage';
 import { InboxPage, MobileInbox } from './pages/InboxPage';
 import { KnowledgePage } from './pages/KnowledgePage';
@@ -23,6 +23,8 @@ interface NavItem {
   roles?: string[];
 }
 
+const INBOX_ROLES = ['CS', 'BIZ', 'VIEWER'];
+
 export const NAV: { group: string; items: NavItem[] }[] = [
   { group: '总览', items: [{ path: 'overview', label: '数据周报', task: 'M12' }] },
   {
@@ -36,7 +38,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: '接待与客资',
     items: [
-      { path: 'inbox', label: '收件箱', task: 'M8', roles: ['CS', 'BIZ', 'VIEWER'] },
+      { path: 'inbox', label: '收件箱', task: 'M8', roles: INBOX_ROLES },
       { path: 'wecom', label: '私域引流', task: 'M9', roles: ['CS', 'BIZ', 'VIEWER'] },
       { path: 'leads', label: '线索库', task: 'M10', roles: ['CS', 'BIZ', 'VIEWER'] },
       { path: 'orders', label: '成交导入', task: 'M11', roles: ['CS', 'BIZ', 'VIEWER'] },
@@ -76,7 +78,7 @@ const built: Record<string, React.ReactNode> = {
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   // 手机端接待：企业微信里打开，不带侧边栏
-  ...['/m/inbox', '/m/inbox/:id'].map((path) => ({ path, element: <RequireAuth><MobileInbox /></RequireAuth> })),
+  ...['/m/inbox', '/m/inbox/:id'].map((path) => ({ path, element: <RequireAuth><RequireRole roles={INBOX_ROLES}><MobileInbox /></RequireRole></RequireAuth> })),
   {
     path: '/',
     element: (
@@ -88,10 +90,10 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/overview" replace /> },
       ...NAV.flatMap((g) => g.items).map((i) => ({
         path: i.path,
-        element: built[i.path] ?? <Placeholder title={i.label} task={i.task} />,
+        element: <RequireRole roles={i.roles}>{built[i.path] ?? <Placeholder title={i.label} task={i.task} />}</RequireRole>,
       })),
       { path: 'drafts/:id', element: <DraftDetailPage /> },
-      { path: 'inbox/:id', element: <InboxPage /> },
+      { path: 'inbox/:id', element: <RequireRole roles={INBOX_ROLES}><InboxPage /></RequireRole> },
     ],
   },
 ]);
