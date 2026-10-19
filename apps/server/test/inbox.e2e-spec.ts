@@ -72,14 +72,16 @@ describe('收件箱（M8）', () => {
     expect(res.body.handoffReason).toBe('客户要求人工');
     expect(res.body.summary).toContain('客户共发了');
     expect(res.body.messages.at(-1)).toMatchObject({ sender: 'system', text: expect.stringContaining('转人工') });
-    expect(notify.sent.at(-1)!.to).toEqual(['kefu', 'kefu2']);
+    expect(notify.sent.filter((n) => n.text.startsWith('【待人工】')).at(-1)!.to).toEqual(['kefu', 'kefu2']);
   });
 
   it('B 端谈代理 → 转人工并通知招商', async () => {
     const res = await paste('果商老王', '你们招代理吗，起订量多少').expect(201);
     expect(res.body.status).toBe('WAITING_AGENT');
     expect(res.body.audience).toBe('B');
-    expect(notify.sent.at(-1)!.to.sort()).toEqual(['kefu', 'kefu2', 'zhaoshang']);
+    expect(notify.sent.filter((n) => n.text.startsWith('【待人工】')).at(-1)!.to.sort()).toEqual(['kefu', 'kefu2', 'zhaoshang']);
+    // 谈合作是有效咨询：建 B 端线索，分给招商
+    expect(notify.sent.at(-1)).toMatchObject({ to: ['zhaoshang'], text: expect.stringContaining('【新线索】B 端') });
   });
 
   it('AI 连续 2 轮答不上才转人工', async () => {

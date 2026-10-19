@@ -26,9 +26,11 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { AuditService } from '../audit/audit.module';
 import { AuthUser, CurrentUser, Public, Roles } from '../common/auth.decorators';
-import { encrypt, hashPhone, normalizePhone } from '../common/pii';
+import { normalizePhone } from '../common/pii';
 import { ZodPipe } from '../common/zod.pipe';
 import { JobQueue } from '../drafts/job-queue';
+import { LeadsModule } from '../leads/leads.module';
+import { LeadsService } from '../leads/leads.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskModule, RiskService } from '../risk/risk.module';
 import { WecomClient } from './wecom.client';
@@ -95,10 +97,12 @@ export class CrmService {
     private readonly notify: NotifyService,
     private readonly audit: AuditService,
     private readonly config: ConfigService,
+    private readonly leads: LeadsService,
   ) {}
 
-  idle() {
-    return this.queue.idle();
+  async idle() {
+    await this.queue.idle();
+    await this.leads.idle();
   }
 
   status() {
@@ -440,40 +444,34 @@ export class CrmService {
 
     // 关联线索：会话专属链接 > 员工备注的手机号 > 同一客户加过别的成员 > 新建
     const phone = normalizePhone(detail.follow.find((f) => f.userid === p.staffId)?.remark_mobiles?.[0]);
-    let lead = conv ? await this.prisma.lead.findUnique({ where: { conversationId: conv.id } }) : null;
-    if (!lead && phone) lead = await this.prisma.lead.findUnique({ where: { phoneHash: hashPhone(phone) } });
+    let lead = conv ? await this.leads.ensureForConversation(conv.id) : null;
+    if (!lead && phone) lead = await this.leads.byPhone(phone);
     if (!lead && contact.leadId) lead = await this.prisma.lead.findUnique({ where: { id: contact.leadId } });
     if (!lead) {
       const other = await this.prisma.wecomContact.findFirst({ where: { externalUserId: p.externalUserId, leadId: { not: null } } });
       if (other) lead = await this.prisma.lead.findUnique({ where: { id: other.leadId! } });
     }
     const account = conv?.account ?? (channel?.accountId ? await this.prisma.platformAccount.findUnique({ where: { id: channel.accountId } }) : null);
+    const source = { kind: 'wecom' as const, platform: account?.platform ?? null, accountName: account?.name ?? null, channelId: channel?.id ?? null, conversationId: conv?.id ?? null };
     if (!lead) {
-      lead = await this.prisma.lead.create({
-        data: {
+      lead = await this.leads.create(
+        {
           audience,
-          conversationId: conv?.id ?? null,
           sourcePlatform: account?.platform ?? null,
           sourceAccount: account?.name ?? null,
-          sourcePostUrl: conv?.sourcePostUrl ?? null,
           wecomChannel: channel?.id ?? null,
-          nickname: detail.name ?? conv?.nickname ?? null,
+          nickname: detail.name ?? null,
           status: LeadStatus.ADDED_WECOM,
         },
-      });
+        source,
+      );
     } else {
-      lead = await this.prisma.lead.update({
-        where: { id: lead.id },
-        data: {
-          status: lead.status === LeadStatus.NEW ? LeadStatus.ADDED_WECOM : undefined,
-          wecomChannel: lead.wecomChannel ?? channel?.id ?? null,
-          // 走到这里说明没有线索占用这条会话（上面先按会话找过）
-          conversationId: lead.conversationId ?? conv?.id ?? undefined,
-        },
-      });
+      await this.leads.addSource(lead.id, source);
+      if (!lead.wecomChannel && channel) await this.prisma.lead.update({ where: { id: lead.id }, data: { wecomChannel: channel.id } });
+      lead = await this.leads.markAddedWecom(lead.id);
     }
-    if (phone && !lead.phoneHash) await this.setPhone(lead.id, phone);
-    await this.prisma.wecomContact.update({ where: { id: contact.id }, data: { leadId: lead.id } });
+    const leadId = phone && !lead.phoneHash ? await this.leads.setPhone(lead.id, phone) : lead.id;
+    await this.prisma.wecomContact.update({ where: { id: contact.id }, data: { leadId } });
 
     // 私信会话标记“已引流”
     if (conv && conv.status !== ConversationStatus.CLOSED && conv.status !== ConversationStatus.DIVERTED) {
@@ -482,32 +480,16 @@ export class CrmService {
     }
   }
 
-  /** 员工给客户备注了手机号：补到线索上；手机号已在别的线索上，就把这位客户并过去。 */
+  /** 员工给客户备注了手机号：补到线索上；手机号已在别的线索上，就把两条合并。 */
   private async onEdit(p: AddEvent) {
     const contact = await this.prisma.wecomContact.findUnique({ where: { externalUserId_staffId: { externalUserId: p.externalUserId, staffId: p.staffId } } });
     if (!contact?.leadId) return;
     const detail = await this.wecom.externalContact(p.externalUserId);
     const phone = normalizePhone(detail.follow.find((f) => f.userid === p.staffId)?.remark_mobiles?.[0]);
     if (!phone) return;
-    const owner = await this.prisma.lead.findUnique({ where: { phoneHash: hashPhone(phone) } });
-    if (!owner) {
-      const lead = await this.prisma.lead.findUniqueOrThrow({ where: { id: contact.leadId } });
-      if (!lead.phoneHash) await this.setPhone(lead.id, phone);
-      return;
-    }
-    if (owner.id === contact.leadId) return;
-    const old = contact.leadId;
-    await this.prisma.wecomContact.updateMany({ where: { externalUserId: p.externalUserId, leadId: old }, data: { leadId: owner.id } });
-    await this.prisma.lead.update({ where: { id: owner.id }, data: { status: owner.status === LeadStatus.NEW ? LeadStatus.ADDED_WECOM : undefined } });
-    // 加微时临时建的空线索没有别的数据就删掉
-    const empty = await this.prisma.lead.findUnique({ where: { id: old }, include: { _count: { select: { addresses: true, followUps: true, orders: true, wecomContacts: true } } } });
-    if (empty && !empty.conversationId && !empty.phoneHash && Object.values(empty._count).every((n) => n === 0)) await this.prisma.lead.delete({ where: { id: old } });
-  }
-
-  private async setPhone(leadId: string, phone: string) {
-    const phoneHash = hashPhone(phone);
-    if (await this.prisma.lead.findUnique({ where: { phoneHash } })) return;
-    await this.prisma.lead.update({ where: { id: leadId }, data: { phoneHash, phoneEnc: encrypt(phone) } });
+    const lead = await this.prisma.lead.findUniqueOrThrow({ where: { id: contact.leadId } });
+    if (lead.phoneHash) return;
+    await this.leads.markAddedWecom(await this.leads.setPhone(lead.id, phone));
   }
 
   private async onChat(chatId?: string) {
@@ -657,5 +639,5 @@ export class CrmController {
   }
 }
 
-@Module({ imports: [RiskModule], providers: [CrmService], controllers: [CrmController], exports: [CrmService] })
+@Module({ imports: [RiskModule, LeadsModule], providers: [CrmService], controllers: [CrmController], exports: [CrmService] })
 export class CrmModule {}

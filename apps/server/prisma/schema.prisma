@@ -479,25 +479,30 @@ enum LeadStatus {
 }
 
 model Lead {
-  id             String     @id @default(cuid())
-  audience       Audience
-  conversationId String?    @unique
-  topicId        String?
-  sourcePlatform Platform?
-  sourceAccount  String?
-  sourcePostUrl  String?
-  wecomChannel   String? // 来源渠道活码 WecomChannel.id
-  nickname       String?
-  name           String?
-  phoneEnc       String?
-  phoneHash      String?    @unique
-  wechat         String?
-  intent         String?
-  intentDetail   Json?
-  status         LeadStatus @default(NEW)
-  ownerId        String?
-  nextFollowAt   DateTime?
-  createdAt      DateTime   @default(now())
+  id               String     @id @default(cuid())
+  audience         Audience
+  conversationId   String?    @unique
+  topicId          String?
+  sourcePlatform   Platform?
+  sourceAccount    String?
+  sourcePostUrl    String?
+  wecomChannel     String? // 来源渠道活码 WecomChannel.id
+  nickname         String?
+  name             String?
+  phoneEnc         String?
+  phoneHash        String?    @unique
+  wechat           String?
+  intent           String?
+  intentDetail     Json?
+  status           LeadStatus @default(NEW)
+  ownerId          String?
+  nextFollowAt     DateTime?
+  lastFollowAt     DateTime?
+  followRemindedAt DateTime? // 到期跟进提醒已发
+  staleRemindedAt  DateTime? // 超 24 小时未跟进提醒已发
+  editedFields     String[]   @default([]) // 人工改过的字段，AI 不再覆盖
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @default(now()) @updatedAt
 
   conversation  Conversation?  @relation(fields: [conversationId], references: [id])
   topic         Topic?         @relation(fields: [topicId], references: [id])
@@ -506,6 +511,30 @@ model Lead {
   followUps     FollowUp[]
   orders        Order[]
   wecomContacts WecomContact[]
+  sources       LeadSource[]
+
+  @@index([audience, status, createdAt])
+}
+
+/**
+ * 线索的每一次来源：私信会话、加企业微信、手动录入、导入。去重合并后都保留。
+ */
+model LeadSource {
+  id             String    @id @default(cuid())
+  leadId         String
+  kind           String // conversation | wecom | manual | import
+  platform       Platform?
+  platformUserId String? // 平台用户 ID，同平台同 ID 视为同一客户
+  accountName    String?
+  postUrl        String?
+  conversationId String?
+  channelId      String?
+  createdAt      DateTime  @default(now())
+
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([platform, platformUserId])
+  @@index([leadId])
 }
 
 model Address {
@@ -518,6 +547,7 @@ model Address {
   district    String
   detailEnc   String
   confirmed   Boolean  @default(false)
+  source      String   @default("manual") // chat 私信识别 | manual 手动 | import 批量导入
   createdAt   DateTime @default(now())
 
   lead Lead @relation(fields: [leadId], references: [id])

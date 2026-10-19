@@ -1,10 +1,10 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { AppLayout } from './layout/AppLayout';
 import { RequireAuth } from './lib/auth';
-import { AddressPage } from './pages/AddressPage';
 import { DraftDetailPage, DraftsPage } from './pages/DraftsPage';
 import { InboxPage, MobileInbox } from './pages/InboxPage';
 import { KnowledgePage } from './pages/KnowledgePage';
+import { LeadsPage } from './pages/LeadsPage';
 import { LoginPage } from './pages/LoginPage';
 import { Placeholder } from './pages/Placeholder';
 import { RiskPage } from './pages/RiskPage';
@@ -36,7 +36,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { path: 'inbox', label: '收件箱', task: 'M8', roles: ['CS', 'BIZ', 'VIEWER'] },
       { path: 'wecom', label: '私域引流', task: 'M9', roles: ['CS', 'BIZ', 'VIEWER'] },
-      { path: 'leads', label: '线索库', task: 'M10' },
+      { path: 'leads', label: '线索库', task: 'M10', roles: ['CS', 'BIZ', 'VIEWER'] },
       { path: 'orders', label: '成交导入', task: 'M11' },
     ],
   },
@@ -64,7 +64,7 @@ const built: Record<string, React.ReactNode> = {
   wecom: <WecomPage />,
   risk: <RiskPage />,
   kb: <KnowledgePage />,
-  leads: <AddressPage />,
+  leads: <LeadsPage />,
   members: <MembersPage />,
   accounts: <AccountsPage />,
 };
