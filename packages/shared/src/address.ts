@@ -91,3 +91,24 @@ export function parseAddress(raw: string, noShip: string[] = DEFAULT_NO_SHIP): P
   }
   return r;
 }
+
+const toHalfWidth = (s: string) => s.replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/　/g, ' ');
+
+/**
+ * 订单匹配用的“收货人 + 地址”键（任务 M11-2）。
+ * 团购工具导出的地址和私信里收的写法常有出入（带不带省、空格、全角数字），
+ * 这里去掉省份、省市区县字样、空白和标点再比较；地址太短认不准时返回 null。
+ */
+export function addressKey(name: string | null | undefined, address: string | null | undefined): string | null {
+  const n = toHalfWidth(name ?? '').replace(/\s/g, '');
+  let a = toHalfWidth(address ?? '').replace(/[\s,，.。;；:：#\-—_()（）/\\]/g, '');
+  for (let i = 0; i < 2; i++) {
+    // 直辖市常写成“上海上海市”，剥两次
+    const p = PROVINCES.find((x) => a.startsWith(x));
+    if (!p) break;
+    a = a.slice(p.length).replace(/^(省|市|壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区)/, '');
+    if (!MUNICIPALITIES.includes(p)) break;
+  }
+  a = a.replace(/[省市区县]/g, '').toLowerCase();
+  return n && a.length >= 4 ? `${n}|${a}` : null;
+}

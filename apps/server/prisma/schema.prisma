@@ -501,6 +501,10 @@ model Lead {
   followRemindedAt DateTime? // 到期跟进提醒已发
   staleRemindedAt  DateTime? // 超 24 小时未跟进提醒已发
   editedFields     String[]   @default([]) // 人工改过的字段，AI 不再覆盖
+  wonAt            DateTime? // 第一次成交
+  dealCents        Int        @default(0) // 成交金额合计（不含退款取消）
+  dealTool         String? // 最近一单的成交工具
+  orderCount       Int        @default(0)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @default(now()) @updatedAt
 
@@ -548,9 +552,14 @@ model Address {
   detailEnc   String
   confirmed   Boolean  @default(false)
   source      String   @default("manual") // chat 私信识别 | manual 手动 | import 批量导入
+  phoneHash   String? // 收件电话的 HMAC，订单匹配用
+  matchHash   String? // 收件人 + 地址的 HMAC，订单匹配用
   createdAt   DateTime @default(now())
 
   lead Lead @relation(fields: [leadId], references: [id])
+
+  @@index([phoneHash])
+  @@index([matchHash])
 }
 
 model FollowUp {
@@ -565,18 +574,64 @@ model FollowUp {
 }
 
 model Order {
-  id           String   @id @default(cuid())
-  tool         String // ktt | jielong | huacheng | manual
-  externalNo   String?
+  id           String    @id @default(cuid())
+  tool         String // ktt 快团团 | jielong 群接龙 | huacheng 花城农夫 | other 其他 | manual 人工录入
+  externalNo   String? // 工具里的订单号；没有订单号时用行内容生成，防重复导入
+  importId     String?
   leadId       String?
+  audience     Audience  @default(C)
   amountCents  Int
+  quoteCents   Int? // B 端报价
+  contractNo   String? // B 端合同编号
+  product      String?
+  quantity     Int?
+  buyerNick    String? // 下单人昵称（不算个人信息，明文）
+  receiverEnc  String?
+  phoneEnc     String?
+  addressEnc   String?
+  province     String?
   phoneHash    String?
-  receiverHash String?
+  receiverHash String? // 收货人 + 地址的 HMAC，用来匹配没留手机号的线索
   matchedBy    String? // phone | receiver_address | manual
+  matchedAt    DateTime?
+  /**
+   * 归因：匹配时线索的来源平台、账号、作品和选题（快照，线索后来改了也不变）
+   */
+  attrPlatform Platform?
+  attrAccount  String?
+  attrPostUrl  String?
+  attrTopicId  String?
+  isRepeat     Boolean   @default(false) // 同一客户的第二单及以后
+  cancelled    Boolean   @default(false) // 已退款或取消，不计成交金额
+  rawStatus    String?
+  note         String?
+  createdById  String?
   orderedAt    DateTime
-  importedAt   DateTime @default(now())
+  importedAt   DateTime  @default(now())
 
-  lead Lead? @relation(fields: [leadId], references: [id])
+  lead   Lead?        @relation(fields: [leadId], references: [id])
+  import OrderImport? @relation(fields: [importId], references: [id])
 
   @@unique([tool, externalNo])
+  @@index([phoneHash])
+  @@index([receiverHash])
+  @@index([leadId])
+  @@index([orderedAt])
+}
+
+/// 一次订单表导入
+model OrderImport {
+  id          String   @id @default(cuid())
+  tool        String
+  fileName    String
+  total       Int // 去掉表头后的订单数（同订单号多行算一单）
+  created     Int
+  duplicated  Int
+  matched     Int
+  failed      Int
+  errors      Json? // [{ row, message }]
+  createdById String
+  createdAt   DateTime @default(now())
+
+  orders Order[]
 }

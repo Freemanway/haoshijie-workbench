@@ -26,6 +26,11 @@ export function hashPhone(phone: string) {
   return createHmac('sha256', key()).update(`phone:${phone}`).digest('hex');
 }
 
+/** 收货人 + 地址的 HMAC（键由 @hsj/shared 的 addressKey 生成），订单匹配用。 */
+export function hashAddress(addrKey: string) {
+  return createHmac('sha256', key()).update(`addr:${addrKey}`).digest('hex');
+}
+
 export function encrypt(text: string) {
   const iv = randomBytes(12);
   const c = createCipheriv('aes-256-gcm', key(), iv);
