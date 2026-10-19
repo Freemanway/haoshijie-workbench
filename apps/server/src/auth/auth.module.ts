@@ -24,7 +24,7 @@ import { AuditService } from '../audit/audit.module';
 import { AuthUser, CurrentUser, IS_PUBLIC, Public, ROLES } from '../common/auth.decorators';
 import { ZodPipe } from '../common/zod.pipe';
 import { PrismaService } from '../prisma/prisma.service';
-import { WecomClient } from './wecom.client';
+import { WecomClient } from '../wecom/wecom.client';
 
 const TOKEN_TTL = '12h';
 
@@ -145,6 +145,6 @@ class AuthController {
     }),
   ],
   controllers: [AuthController],
-  providers: [WecomClient, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [{ provide: APP_GUARD, useClass: AuthGuard }],
 })
 export class AuthModule {}

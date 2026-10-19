@@ -230,8 +230,9 @@ model ReviewLog {
   id         String   @id @default(cuid())
   draftId    String
   reviewerId String
-  action     String   // approve | reject | edit | comment
+  action     String   // submit | withdraw | approve | reject | edit | comment
   note       String?
+  versionId  String?  // 操作针对的稿件版本
   before     String?
   after      String?
   createdAt  DateTime @default(now())
@@ -241,23 +242,46 @@ model ReviewLog {
 }
 
 model ScheduleItem {
-  id          String    @id @default(cuid())
-  draftId     String
-  accountId   String
-  publishAt   DateTime
-  remindedAt  DateTime?
-  publishedAt DateTime?
-  postUrl     String?   // 人工回填的作品链接
-  // 作品数据（一期人工回填，二期接口回收）
-  reads       Int?
-  likes       Int?
-  saves       Int?
-  comments    Int?
+  id           String    @id @default(cuid())
+  draftId      String
+  accountId    String
+  publishAt    DateTime
+  remindedAt   DateTime? // 到点提醒已发送
+  publishedAt  DateTime?
+  postUrl      String?   // 人工回填的作品链接
+  failedReason String?   // 发布失败原因（如平台审核不通过）
+  // 作品最新数据（一期人工回填，二期接口回收）；每次回填的快照在 PostMetric
+  reads        Int?
+  likes        Int?
+  saves        Int?
+  comments     Int?
+  remind24At   DateTime? // 发布 24 小时数据回填提醒已发送
+  remind7dAt   DateTime? // 发布 7 天数据回填提醒已发送
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   draft   Draft           @relation(fields: [draftId], references: [id])
   account PlatformAccount @relation(fields: [accountId], references: [id])
+  metrics PostMetric[]
 
   @@index([publishAt])
+}
+
+/** 作品数据快照：发布 24 小时、7 天各回填一次（M7-3）。 */
+model PostMetric {
+  id             String   @id @default(cuid())
+  scheduleItemId String
+  checkpoint     String   // 24h | 7d
+  reads          Int
+  likes          Int
+  saves          Int
+  comments       Int
+  userId         String?
+  recordedAt     DateTime @default(now())
+
+  scheduleItem ScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleItemId, checkpoint])
 }
 
 // ---------- 私信接待（PRD 5） ----------
