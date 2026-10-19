@@ -65,17 +65,25 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `GET/POST/PATCH/DELETE /api/topics`、`POST /api/topics/:id/replace` | 选题库维护；替换清单里的一个选题 | M3 |
 | `GET/POST /api/drafts`、`GET /api/drafts/:id`、`POST /api/drafts/:id/retry` | 稿件列表、按选题生成小红书稿件（默认 2 个版本）、详情（含风控和规格检查、推荐素材）、失败重试 | M4-2 |
 | `POST /api/drafts/:id/rewrite`、`PATCH /api/drafts/:id/versions/:vid`、`POST …/choose` | AI 改写（整篇重写、改语气、缩短、扩写、按驳回原因重写）、人工修改、设为采用；每次都生成新版本 | M4-3 |
+| `POST /api/drafts/:id/submit`、`/withdraw`、`/approve`、`/reject` `{ reason }`、`/comments`、`POST /api/drafts/batch-approve` | 审核流：提交（含拦截词不能提交）、撤回、通过、驳回（必填原因）、批注、批量通过；提交通知审核人，驳回通知运营 | M6 |
+| `PATCH /api/drafts/:id/review-versions/:vid`、`GET /api/drafts/:id/reviews` | 审核人直接修改（记录改前改后，页面可看逐行对比）、审核记录 | M6 |
+| `GET /api/schedule?from=&to=`、`POST /api/schedule` `{ draftId, accountIds, publishAt }`、`PATCH/DELETE /api/schedule/:id` | 排期日历；只排审核通过的稿件，受账号每日上限约束，多账号发同一篇时提示做差异化；改期、换账号、取消 | M7-1 |
+| `GET /api/schedule/today`、`GET /api/schedule/:id/package`、`POST …/publish` `{ postUrl }`、`POST …/fail` `{ reason }` | 今日待发、素材包（文案、配图建议、素材库里标签匹配的图片）、回填作品链接、标记发布失败 | M7-2 |
+| `GET /api/schedule/metrics-due`、`POST /api/schedule/:id/metrics` `{ checkpoint: '24h'\|'7d', reads, likes, saves, comments }` | 待回填数据、回填发布 24 小时 / 7 天数据 | M7-3 |
 | `POST /api/leads/parse-address` `{ raw }` | 整段地址拆成收件人、电话、省市区、详细地址，校验配送范围 | M10-2 |
 
 ## 大模型
 
 - 当前选用 DeepSeek（`deepseek-chat`），`.env.example` 已填好接口地址和模型名，部署时只需填 `LLM_API_KEY`。填好后运行 `pnpm --filter @hsj/server llm:check`，会发一次请求并实际生成一篇小红书稿件，检查格式和规格。
+- DeepSeek 目前把 `deepseek-chat` 映射到 `deepseek-flash`，也可以直接把 `LLM_MODEL` 改成 `deepseek-flash` 或 `deepseek-v4-pro`。
 - 模型网关只依赖 OpenAI 兼容接口，换模型只改 `LLM_BASE_URL`、`LLM_API_KEY`、`LLM_MODEL`，见 `.env.example`。
 - 不配置时使用演示模型，输出固定的示例内容，页面会提示“当前为演示模型”。测试一律走演示模型。
 - 提示词模板在 `apps/server/src/ai/prompts.ts`，每个模板带版本号；每次调用都写入 `LlmCall`（模板版本、输入输出、tokens、费用、耗时），稿件版本记录生成它的调用。
 - 输出不合格（格式不对、字数或篇数不符）时带上问题自动重试一次，仍不合格的保留下来并在页面标出问题，由运营修改。
 - 知识库里的“合规口径”条目作为改写规则交给模型，不当作事实写进稿件。
 - 每周四 9:00（北京时间）自动生成下周选题清单，可在“选题清单 > 配额与类别”里关闭，部署时也可用 `CRON_ENABLED=false` 关闭。
+- 定时任务（`CRON_ENABLED=false` 可全部关闭）：每分钟检查到点排期并提醒内容运营去发；每小时检查发布满 24 小时、7 天的作品并提醒回填数据；周四生成选题清单后也会提醒。
+- 提醒走企业微信应用消息（`WECOM_*`），没配置时只写日志。
 - 稿件生成在进程内排队（同时最多 2 个）；多实例部署时换成 Redis + BullMQ。
 
 ## 约定

@@ -92,6 +92,9 @@ importers:
       antd:
         specifier: 5.29.3
         version: 5.29.3(luxon@3.7.2)(react-dom@19.1.10(react@19.1.10))(react@19.1.10)
+      dayjs:
+        specifier: 1.11.23
+        version: 1.11.23
       react:
         specifier: 19.1.10
         version: 19.1.10

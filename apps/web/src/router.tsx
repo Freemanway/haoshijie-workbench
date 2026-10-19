@@ -7,6 +7,7 @@ import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { Placeholder } from './pages/Placeholder';
 import { RiskPage } from './pages/RiskPage';
+import { SchedulePage } from './pages/SchedulePage';
 import { AccountsPage, MembersPage } from './pages/SettingsPages';
 import { TopicsPage } from './pages/TopicsPage';
 
@@ -55,6 +56,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
 const built: Record<string, React.ReactNode> = {
   topics: <TopicsPage />,
   drafts: <DraftsPage />,
+  schedule: <SchedulePage />,
   risk: <RiskPage />,
   kb: <KnowledgePage />,
   leads: <AddressPage />,

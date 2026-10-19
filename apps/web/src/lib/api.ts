@@ -67,3 +67,22 @@ export const ROLE_LABEL: Record<string, string> = {
 };
 export const PLATFORM_LABEL: Record<string, string> = { XHS: '小红书', DOUYIN: '抖音', WECHAT_CHANNELS: '视频号' };
 export const AUDIENCE_LABEL: Record<string, string> = { C: 'C 端', B: 'B 端' };
+
+/** 下载需要登录的文件（如素材包）。 */
+export async function download(path: string, fallbackName: string) {
+  const token = tokenStore.get();
+  const res = await fetch(`/api${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) {
+    const data = await res.json().catch(() => undefined);
+    throw new ApiError(res.status, data?.message ?? '下载失败');
+  }
+  const m = /filename\*=UTF-8''([^;]+)/.exec(res.headers.get('Content-Disposition') ?? '');
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = m ? decodeURIComponent(m[1]) : fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

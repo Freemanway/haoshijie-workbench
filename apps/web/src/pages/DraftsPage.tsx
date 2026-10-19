@@ -1,4 +1,4 @@
-import { checkXhsDraft, textLength, XHS_LIMITS, type RiskHit } from '@hsj/shared';
+import { checkXhsDraft, diffLines, textLength, XHS_LIMITS, type RiskHit } from '@hsj/shared';
 import {
   Alert,
   App,
@@ -18,14 +18,17 @@ import {
   Space,
   Table,
   Tag,
+  Timeline,
   Typography,
 } from 'antd';
+import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { RiskHighlight } from '../components/RiskHighlight';
 import { api, AUDIENCE_LABEL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { DRAFT_STATUS, Topic, withWeekday } from '../lib/content';
+import { CreateModal } from './SchedulePage';
 import { AiModelNotice } from './TopicsPage';
 
 interface DraftRow {
@@ -62,7 +65,28 @@ interface DraftDetail {
   topic: Topic;
   versions: Version[];
   assets: { id: string; title: string; url: string; kind: string; tags: string[] }[];
+  reviews: Review[];
+  schedules: { id: string; publishAt: string; publishedAt: string | null; failedReason: string | null; postUrl: string | null; account: { id: string; name: string } }[];
 }
+
+interface Review {
+  id: string;
+  action: string;
+  note: string | null;
+  before: string | null;
+  after: string | null;
+  createdAt: string;
+  reviewer: { name: string };
+}
+
+const REVIEW_ACTION: Record<string, { text: string; color: string }> = {
+  submit: { text: '提交审核', color: 'blue' },
+  withdraw: { text: '撤回', color: 'gray' },
+  approve: { text: '通过', color: 'green' },
+  reject: { text: '驳回', color: 'red' },
+  edit: { text: '审核人修改', color: 'purple' },
+  comment: { text: '批注', color: 'gray' },
+};
 
 const statusTag = (s: string) => <Tag color={DRAFT_STATUS[s]?.color}>{DRAFT_STATUS[s]?.text ?? s}</Tag>;
 
@@ -70,6 +94,9 @@ export function DraftsPage() {
   const { message } = App.useApp();
   const [status, setStatus] = useState<string>('');
   const [rows, setRows] = useState<DraftRow[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const { can } = useAuth();
   const navigate = useNavigate();
 
   const load = useCallback(
@@ -84,24 +111,58 @@ export function DraftsPage() {
     return () => clearInterval(t);
   }, [generating, load]);
 
+  const batchApprove = async () => {
+    setBusy(true);
+    try {
+      const r = await api<{ approved: number; results: { id: string; ok: boolean; reason?: string }[] }>('/drafts/batch-approve', { method: 'POST', body: { ids: selected } });
+      const failed = r.results.filter((x) => !x.ok);
+      if (failed.length) message.warning(`通过 ${r.approved} 篇，${failed.length} 篇未通过：${failed.map((f) => f.reason).join('；')}`);
+      else message.success(`已通过 ${r.approved} 篇`);
+      setSelected([]);
+      await load();
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
         <Typography.Title level={3} style={{ margin: 0 }}>稿件</Typography.Title>
-        <Typography.Text type="secondary">选题确认后自动生成；在这里挑版本、改稿，提交审核在下一阶段（M6）上线</Typography.Text>
+        <Typography.Text type="secondary">选题确认后自动生成；运营挑版本、改稿后提交审核，审核通过即可排期</Typography.Text>
       </div>
       <AiModelNotice />
-      <Select
-        value={status}
-        onChange={setStatus}
-        style={{ width: 160 }}
-        options={[{ value: '', label: '全部状态' }, ...Object.entries(DRAFT_STATUS).map(([value, s]) => ({ value, label: s.text }))]}
-      />
+      <Space wrap>
+        <Select
+          value={status}
+          onChange={(v) => { setStatus(v); setSelected([]); }}
+          style={{ width: 160 }}
+          options={[{ value: '', label: '全部状态' }, ...Object.entries(DRAFT_STATUS).map(([value, s]) => ({ value, label: s.text }))]}
+        />
+        {can('REVIEWER') && (
+          <Button type="primary" disabled={!selected.length} loading={busy} onClick={batchApprove}>
+            批量通过{selected.length ? `（${selected.length}）` : ''}
+          </Button>
+        )}
+      </Space>
       <Table<DraftRow>
         rowKey="id"
         dataSource={rows}
         scroll={{ x: 800 }}
-        onRow={(r) => ({ onClick: () => navigate(`/drafts/${r.id}`), style: { cursor: 'pointer' } })}
+        rowSelection={
+          can('REVIEWER')
+            ? { selectedRowKeys: selected, onChange: (k) => setSelected(k as string[]), getCheckboxProps: (r) => ({ disabled: r.status !== 'PENDING_REVIEW' }) }
+            : undefined
+        }
+        onRow={(r) => ({
+          onClick: (e) => {
+            if ((e.target as HTMLElement).closest('.ant-table-selection-column')) return;
+            navigate(`/drafts/${r.id}`);
+          },
+          style: { cursor: 'pointer' },
+        })}
         locale={{ emptyText: <Empty description="还没有稿件，先去选题清单确认选题" /> }}
         columns={[
           { title: '建议日期', key: 'date', width: 110, render: (_, r) => withWeekday(r.topic.suggestedDate) },
@@ -138,7 +199,13 @@ export function DraftDetailPage() {
   const [busy, setBusy] = useState(false);
   const [ask, setAsk] = useState<(typeof REWRITES)[number] | null>(null);
   const [instruction, setInstruction] = useState('');
+  const [prompt, setPrompt] = useState<{ title: string; label: string; required: boolean; ok: string; run: (text: string) => Promise<unknown> } | null>(null);
+  const [promptText, setPromptText] = useState('');
+  const [diff, setDiff] = useState<Review | null>(null);
+  const [scheduling, setScheduling] = useState<dayjs.Dayjs | null>(null);
+  const [accounts, setAccounts] = useState<{ id: string; name: string; platform: string; dailyPostCap: number }[]>([]);
   const [form] = Form.useForm();
+  useEffect(() => void api<typeof accounts>('/accounts').then(setAccounts, () => undefined), []);
 
   const load = useCallback(async () => {
     const r = await api<DraftDetail>(`/drafts/${id}`);
@@ -155,8 +222,17 @@ export function DraftDetailPage() {
   if (!d) return null;
   const v = d.versions.find((x) => x.id === viewId) ?? d.versions.find((x) => x.chosen) ?? d.versions[0];
   const editable = ['DRAFT', 'REJECTED'].includes(d.status);
-  const canEdit = can('CONTENT') && editable;
+  const reviewing = d.status === 'PENDING_REVIEW';
+  // 运营在草稿/驳回时改稿；审核人在待审核时可以直接改（留痕）
+  const ownerEdit = can('CONTENT') && editable;
+  const reviewerEdit = can('REVIEWER') && reviewing;
+  const canEdit = ownerEdit || reviewerEdit;
   const canRewrite = can('CONTENT', 'REVIEWER') && editable;
+  const canSchedule = can('CONTENT') && ['APPROVED', 'SCHEDULED', 'PUBLISH_FAILED'].includes(d.status);
+  const askText = (title: string, label: string, required: boolean, ok: string, run: (text: string) => Promise<unknown>) => {
+    setPromptText('');
+    setPrompt({ title, label, required, ok, run });
+  };
 
   const act = async (fn: () => Promise<unknown>, ok: string, after?: (r: DraftDetail) => void) => {
     setBusy(true);
@@ -178,7 +254,8 @@ export function DraftDetailPage() {
 
   const saveEdit = async () => {
     const values = await form.validateFields();
-    await act(() => api(`/drafts/${d.id}/versions/${v.id}`, { method: 'PATCH', body: values }), '已保存为新版本', (r) => { setEditing(false); showNewest(r); });
+    const path = ownerEdit ? `/drafts/${d.id}/versions/${v.id}` : `/drafts/${d.id}/review-versions/${v.id}`;
+    await act(() => api(path, { method: 'PATCH', body: values }), '已保存为新版本', (r) => { setEditing(false); showNewest(r); });
   };
 
   const copy = async () => {
@@ -210,7 +287,33 @@ export function DraftDetailPage() {
         <Alert type="error" showIcon message="生成失败" description={d.error}
           action={can('CONTENT') && <Button onClick={() => act(() => api(`/drafts/${d.id}/retry`, { method: 'POST' }), '已重新开始生成')}>重试</Button>} />
       )}
-      {d.rejectReason && <Alert type="warning" showIcon message={`驳回原因：${d.rejectReason}`} />}
+      {d.status === 'REJECTED' && d.rejectReason && (
+        <Alert
+          type="warning"
+          showIcon
+          message={`驳回原因：${d.rejectReason}`}
+          action={canRewrite && <Button loading={busy} onClick={() => rewrite('reject_reason', d.rejectReason!)}>按驳回原因重写</Button>}
+        />
+      )}
+      {d.status === 'PENDING_REVIEW' && can('REVIEWER') && <Alert type="info" showIcon message="这篇稿件等你审核：可以直接修改、批注，然后通过或驳回。" />}
+      <Space wrap>
+        {can('CONTENT') && editable && (
+          <Button type="primary" loading={busy} disabled={!v || v.risk.blocked} onClick={() => act(() => api(`/drafts/${d.id}/submit`, { method: 'POST' }), '已提交审核，已通知审核人')}>
+            提交审核
+          </Button>
+        )}
+        {can('CONTENT') && reviewing && <Button loading={busy} onClick={() => act(() => api(`/drafts/${d.id}/withdraw`, { method: 'POST' }), '已撤回')}>撤回</Button>}
+        {can('REVIEWER') && reviewing && (
+          <>
+            <Button type="primary" loading={busy} disabled={!v || v.risk.blocked} onClick={() => act(() => api(`/drafts/${d.id}/approve`, { method: 'POST', body: {} }), '已通过')}>通过</Button>
+            <Button danger loading={busy} onClick={() => askText('驳回稿件', '驳回原因（会发给运营，也可以让 AI 按这个原因重写）', true, '驳回', (reason) => api(`/drafts/${d.id}/reject`, { method: 'POST', body: { reason } }))}>驳回</Button>
+          </>
+        )}
+        {can('REVIEWER', 'CONTENT') && d.versions.length > 0 && (
+          <Button onClick={() => askText('添加批注', '批注', true, '保存', (note) => api(`/drafts/${d.id}/comments`, { method: 'POST', body: { note, versionId: v?.id } }))}>批注</Button>
+        )}
+        {canSchedule && <Button type="primary" onClick={() => setScheduling(dayjs().add(1, 'day').hour(12).minute(0).second(0))}>排期</Button>}
+      </Space>
 
       {v && (
         <Row gutter={16}>
@@ -246,7 +349,7 @@ export function DraftDetailPage() {
               title={`版本 ${v.index}${v.chosen ? '（采用）' : ''}`}
               extra={
                 <Space wrap>
-                  {!editing && canEdit && !v.chosen && (
+                  {!editing && ownerEdit && !v.chosen && (
                     <Button loading={busy} onClick={() => act(() => api(`/drafts/${d.id}/versions/${v.id}/choose`, { method: 'POST' }), '已设为采用')}>设为采用</Button>
                   )}
                   {!editing && canRewrite && (
@@ -334,9 +437,73 @@ export function DraftDetailPage() {
                 <Typography.Text type="secondary">素材库里没有标签匹配的素材。给素材打上类别或话题标签后会出现在这里。</Typography.Text>
               )}
             </Card>
+            {d.schedules.length > 0 && (
+              <Card size="small" title="排期" style={{ marginTop: 16 }} extra={<Link to="/schedule">去排期日历</Link>}>
+                <List
+                  size="small"
+                  dataSource={d.schedules}
+                  renderItem={(x) => (
+                    <List.Item>
+                      <Space wrap>
+                        <Typography.Text>{dayjs(x.publishAt).format('M月D日 HH:mm')}</Typography.Text>
+                        <Typography.Text>{x.account.name}</Typography.Text>
+                        {x.publishedAt ? <Tag color="green">已发布</Tag> : x.failedReason ? <Tag color="red">失败：{x.failedReason}</Tag> : <Tag color="purple">待发布</Tag>}
+                        {x.postUrl && <a href={x.postUrl} target="_blank" rel="noreferrer">作品链接</a>}
+                      </Space>
+                    </List.Item>
+                  )}
+                />
+              </Card>
+            )}
+            <Card size="small" title="审核记录" style={{ marginTop: 16 }}>
+              {d.reviews.length ? (
+                <Timeline
+                  style={{ marginTop: 8, marginBottom: -16 }}
+                  items={d.reviews.map((r) => ({
+                    color: REVIEW_ACTION[r.action]?.color ?? 'gray',
+                    children: (
+                      <Space direction="vertical" size={0}>
+                        <Space wrap size={6}>
+                          <Typography.Text strong>{REVIEW_ACTION[r.action]?.text ?? r.action}</Typography.Text>
+                          <Typography.Text type="secondary">{r.reviewer.name} · {dayjs(r.createdAt).format('M月D日 HH:mm')}</Typography.Text>
+                          {r.before != null && r.after != null && <Button size="small" type="link" style={{ padding: 0 }} onClick={() => setDiff(r)}>查看改动</Button>}
+                        </Space>
+                        {r.note && <Typography.Text>{r.note}</Typography.Text>}
+                      </Space>
+                    ),
+                  }))}
+                />
+              ) : (
+                <Typography.Text type="secondary">还没有审核记录</Typography.Text>
+              )}
+            </Card>
           </Col>
         </Row>
       )}
+
+      <Modal
+        title={prompt?.title}
+        open={!!prompt}
+        okText={prompt?.ok}
+        okButtonProps={{ disabled: !!prompt?.required && !promptText.trim(), danger: prompt?.ok === '驳回' }}
+        onCancel={() => setPrompt(null)}
+        onOk={() => { const p = prompt!; setPrompt(null); void act(() => p.run(promptText.trim()), `已${p.ok}`); }}
+      >
+        <Typography.Paragraph type="secondary">{prompt?.label}</Typography.Paragraph>
+        <Input.TextArea rows={3} maxLength={500} showCount value={promptText} onChange={(e) => setPromptText(e.target.value)} />
+      </Modal>
+      <Modal title="审核人的改动" open={!!diff} footer={null} width={720} onCancel={() => setDiff(null)}>
+        {diff && (
+          <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, margin: 0, maxHeight: '60vh', overflow: 'auto' }}>
+            {diffLines(diff.before ?? '', diff.after ?? '').map((l, n) => (
+              <div key={n} style={{ background: l.type === 'add' ? '#E8F5EC' : l.type === 'del' ? '#FBEAEA' : undefined, textDecoration: l.type === 'del' ? 'line-through' : undefined, color: l.type === 'del' ? '#a8071a' : undefined, padding: '0 6px' }}>
+                {l.type === 'add' ? '+ ' : l.type === 'del' ? '− ' : '  '}{l.text || ' '}
+              </div>
+            ))}
+          </pre>
+        )}
+      </Modal>
+      <CreateModal at={scheduling} accounts={accounts} draftId={d.id} onClose={() => setScheduling(null)} onDone={() => { setScheduling(null); void load(); }} />
 
       <Modal
         title={ask?.label.replace('…', '')}
