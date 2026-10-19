@@ -27,6 +27,7 @@ import {
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { ManualDealModal, MATCH_LABEL, TOOL_LABEL, yuan } from '../components/DealForms';
 import { api, ApiError, download, PLATFORM_LABEL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -54,16 +55,22 @@ interface Lead {
   editedFields: string[];
   counts: { sources: number; addresses: number; followUps: number };
   canEdit: boolean;
+  dealCents: number;
+  orderCount: number;
+  dealTool: string | null;
+  wonAt: string | null;
 }
 interface Source { id: string; kind: string; platform: string | null; accountName: string | null; postUrl: string | null; conversationId: string | null; createdAt: string }
 interface Address { id: string; name: string; phone: string; province: string; city: string; district: string; detail: string; confirmed: boolean; source: string; createdAt: string }
 interface FollowUp { id: string; note: string; createdAt: string; user: Owner }
+interface Deal { id: string; tool: string; externalNo: string | null; amountCents: number; quoteCents: number | null; contractNo: string | null; product: string | null; quantity: number | null; matchedBy: string | null; isRepeat: boolean; cancelled: boolean; note: string | null; orderedAt: string }
 interface LeadDetail extends Lead {
   sources: Source[];
   addresses: Address[];
   followUps: FollowUp[];
   conversation: { id: string; status: string; summary: string | null; account: { name: string } } | null;
   wecomContacts: { staffId: string; name: string | null; addedAt: string; removedAt: string | null; channel: { name: string } | null }[];
+  orders: Deal[];
 }
 interface Settings { noShip: string[]; privacyNotice: string; staleHours: number }
 interface Parsed { name: string; phone: string; province: string; city: string; district: string; detail: string; ok: boolean; outOfRange: boolean; message: string }
@@ -317,6 +324,47 @@ function FollowBlock({ lead, onChanged }: { lead: LeadDetail; onChanged: (l: Lea
   );
 }
 
+function DealBlock({ lead, onChanged, reload }: { lead: LeadDetail; onChanged: (l: LeadDetail) => void; reload: () => void }) {
+  const run = useAction();
+  const [adding, setAdding] = useState(false);
+  const unlink = async (d: Deal) => {
+    if (d.tool === 'manual') await run(() => api(`/orders/${d.id}`, { method: 'DELETE' }), '已删除');
+    else await run(() => api(`/orders/${d.id}/unlink`, { method: 'POST' }), '已撤销关联，订单回到“待人工关联”');
+    reload();
+  };
+  return (
+    <Card
+      size="small"
+      title={lead.orderCount ? `成交（${lead.orderCount} 单 · ${yuan(lead.dealCents)}）` : '成交'}
+      extra={lead.canEdit && <Button size="small" onClick={() => setAdding(true)}>录入成交</Button>}
+    >
+      {lead.orders.length ? (
+        <List size="small" dataSource={lead.orders} renderItem={(d) => (
+          <List.Item actions={lead.canEdit ? [
+            <Popconfirm key="x" title={d.tool === 'manual' ? '删除这条人工录入的成交？' : '撤销这张订单和线索的关联？'} onConfirm={() => void unlink(d)}>
+              <Button type="link" size="small" danger>{d.tool === 'manual' ? '删除' : '撤销关联'}</Button>
+            </Popconfirm>,
+          ] : []}>
+            <Space direction="vertical" size={0}>
+              <Space size={4} wrap>
+                <Typography.Text delete={d.cancelled} strong>{yuan(d.amountCents)}</Typography.Text>
+                <Tag>{TOOL_LABEL[d.tool] ?? d.tool}</Tag>
+                {d.cancelled && <Tag>已退款/取消</Tag>}
+                {d.isRepeat && <Tag color="purple">复购</Tag>}
+                {d.matchedBy && d.tool !== 'manual' && <Typography.Text type="secondary">按{MATCH_LABEL[d.matchedBy] ?? d.matchedBy}匹配</Typography.Text>}
+              </Space>
+              <Typography.Text type="secondary">
+                {[dayjs(d.orderedAt).format('YYYY-MM-DD'), d.externalNo && !d.externalNo.startsWith('h:') && `订单 ${d.externalNo}`, d.product, d.quantity && `${d.quantity} 件`, d.quoteCents != null && `报价 ${yuan(d.quoteCents)}`, d.contractNo && `合同 ${d.contractNo}`, d.note].filter(Boolean).join(' · ')}
+              </Typography.Text>
+            </Space>
+          </List.Item>
+        )} />
+      ) : <Typography.Text type="secondary">还没有成交。团购订单导入后会按手机号、收货人和地址自动对上；B 端大单和线下成交点“录入成交”。</Typography.Text>}
+      {adding && <ManualDealModal<LeadDetail> leadId={lead.id} onClose={() => setAdding(false)} onDone={(l) => { setAdding(false); onChanged(l); }} />}
+    </Card>
+  );
+}
+
 function LeadDrawer({ id, owners, onClose, onChanged }: { id: string; owners: Owner[]; onClose: () => void; onChanged: () => void }) {
   const { modal } = App.useApp();
   const run = useAction();
@@ -354,6 +402,8 @@ function LeadDrawer({ id, owners, onClose, onChanged }: { id: string; owners: Ow
             <Descriptions.Item label="手机号">{lead.phone ?? '—'} {lead.phone && lead.canEdit && <Button type="link" size="small" onClick={reveal}>查看</Button>}</Descriptions.Item>
             <Descriptions.Item label="微信">{lead.wechat ?? '—'}</Descriptions.Item>
             <Descriptions.Item label="下次跟进">{lead.nextFollowAt ? dayjs(lead.nextFollowAt).format('MM-DD HH:mm') : '—'}</Descriptions.Item>
+            {lead.orderCount > 0 && <Descriptions.Item label="成交金额">{yuan(lead.dealCents)}（{lead.orderCount} 单）</Descriptions.Item>}
+            {lead.orderCount > 0 && <Descriptions.Item label="成交工具">{TOOL_LABEL[lead.dealTool ?? ''] ?? lead.dealTool}</Descriptions.Item>}
             {DETAIL_FIELDS[lead.audience].map(([k, label]) => <Descriptions.Item key={k} label={label}>{detail[k] ?? '—'}</Descriptions.Item>)}
           </Descriptions>
 
@@ -365,6 +415,7 @@ function LeadDrawer({ id, owners, onClose, onChanged }: { id: string; owners: Ow
           )}
 
           <FollowBlock lead={lead} onChanged={changed} />
+          <DealBlock lead={lead} onChanged={changed} reload={() => void load().then(onChanged)} />
           <AddressBlock lead={lead} onChanged={changed} />
 
           <Card size="small" title={`来源记录（${lead.sources.length}）`}>
@@ -508,7 +559,7 @@ export function LeadsPage() {
             { title: '联系方式', key: 'contact', render: (_, l) => [l.phone, l.wechat && `微信 ${l.wechat}`].filter(Boolean).join(' · ') || '—' },
             { title: '来源', key: 'src', render: (_, l) => <>{[l.sourcePlatform && (PLATFORM_LABEL[l.sourcePlatform] ?? l.sourcePlatform), l.sourceAccount].filter(Boolean).join(' · ') || '手动录入'}{l.counts.sources > 1 && <Tag style={{ marginLeft: 4 }}>{l.counts.sources} 次来源</Tag>}</> },
             { title: '负责人', key: 'owner', render: (_, l) => l.owner?.name ?? <Typography.Text type="secondary">未分配</Typography.Text> },
-            { title: '状态', dataIndex: 'status', render: (s: string) => <Tag color={LEAD_STATUS[s]?.color}>{LEAD_STATUS[s]?.text ?? s}</Tag> },
+            { title: '状态', dataIndex: 'status', render: (s: string, l) => <Space size={4} wrap><Tag color={LEAD_STATUS[s]?.color}>{LEAD_STATUS[s]?.text ?? s}</Tag>{l.orderCount > 0 && <Typography.Text>{yuan(l.dealCents)}</Typography.Text>}</Space> },
             {
               title: '下次跟进', dataIndex: 'nextFollowAt',
               render: (t: string | null, l) => t ? <Typography.Text type={dayjs(t).isBefore(dayjs()) ? 'danger' : undefined}>{dayjs(t).format('MM-DD HH:mm')}</Typography.Text> : !l.lastFollowAt && dayjs(l.createdAt).isBefore(dayjs().subtract(24, 'hour')) ? <Typography.Text type="warning">超 24 小时未跟进</Typography.Text> : '—',

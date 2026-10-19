@@ -11,6 +11,7 @@ import { HealthModule } from './health/health.module';
 import { InboxModule } from './inbox/inbox.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { LeadsModule } from './leads/leads.module';
+import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RiskModule } from './risk/risk.module';
 import { ScheduleModule as PublishScheduleModule } from './schedule/schedule.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     KnowledgeModule,
     RiskModule,
     LeadsModule,
+    OrdersModule,
     DraftsModule,
     ReviewModule,
     TopicsModule,

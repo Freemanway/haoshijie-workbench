@@ -87,6 +87,9 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `POST …/:id/follow-ups` `{ note, nextFollowAt?, status? }`、`/script`、`/extract` | 跟进记录、推荐话术、AI 从对话重新提取意向 | M10-3 |
 | `POST/PATCH/DELETE …/:id/addresses`、`POST …/:id/addresses/import` `{ text }` | 收货地址（多地址）、批量导入（每行一个，可从 Excel 粘贴） | M10-2 |
 | `POST …/:id/reveal` `{ addressId? }`、`GET /api/leads/export?audience=`、`GET/PUT /api/leads/settings`、`POST …/:id/merge` | 查看明文（记日志）、管理员明文导出 CSV（记日志）、配送范围与告知语与未跟进时限、管理员手动合并 | M10-4、M10-5 |
+| `POST /api/orders/import/preview`、`POST /api/orders/import` `{ tool, fileName, data(base64), mapping }` | 团购订单表（.xlsx / .csv）导入：先预览并猜字段映射，确认后导入；同订单号或同行内容不重复导入；映射按工具记住 | M11-1 |
+| `GET /api/orders?state=&tool=&q=&from=&to=&importId=&page=`、`POST …/:id/link` `{ leadId }`、`/unlink`、`/reveal` | 订单列表（脱敏、汇总）、待人工关联、人工关联（同手机号或同收货人加地址的其他未关联订单一起关联）、撤销、看明文（记日志） | M11-2 |
+| `POST /api/orders/manual`、`DELETE /api/orders/:id`、`GET /api/orders/imports`、`DELETE /api/orders/imports/:id` | B 端和线下成交人工录入（报价、合同、金额）、删除人工录入、导入记录、管理员整批删除 | M11-3 |
 
 ## 大模型
 

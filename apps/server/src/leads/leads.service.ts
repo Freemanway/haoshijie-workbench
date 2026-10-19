@@ -1,14 +1,14 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
-import { DEFAULT_NO_SHIP, maskPhone, parseAddress, ParsedAddress } from '@hsj/shared';
+import { addressKey, DEFAULT_NO_SHIP, maskPhone, parseAddress, ParsedAddress } from '@hsj/shared';
 import { Audience, Lead, LeadStatus, Platform, Prisma, Role } from '@prisma/client';
 import { z } from 'zod';
 import { AiService } from '../ai/ai.module';
 import { leadExtract, leadScript } from '../ai/prompts';
 import { AuditService } from '../audit/audit.module';
 import { AuthUser } from '../common/auth.decorators';
-import { decrypt, encrypt, hashPhone, normalizePhone } from '../common/pii';
+import { decrypt, encrypt, hashAddress, hashPhone, normalizePhone } from '../common/pii';
 import { JobQueue } from '../drafts/job-queue';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../wecom/wecom.module';
@@ -85,6 +85,13 @@ export const maskName = (s: string) => (s.length <= 1 ? s : s.length === 2 ? `${
 export const maskDetail = (s: string) => (s.length <= 4 ? '****' : `${s.slice(0, 4)}****`);
 const platformUserId = (externalUserId: string) => externalUserId.replace(/^comment:/, '');
 
+/** 地址上存的匹配哈希：收件电话、收件人 + 地址（M11 订单匹配用）。 */
+export function addressHashes(p: { name: string; phone: string; province: string; city: string; district: string; detail: string }) {
+  const phone = normalizePhone(p.phone);
+  const key = addressKey(p.name, `${p.province}${p.city}${p.district}${p.detail}`);
+  return { phoneHash: phone ? hashPhone(phone) : null, matchHash: key ? hashAddress(key) : null };
+}
+
 const leadInclude = {
   owner: { select: { id: true, name: true } },
   _count: { select: { sources: true, addresses: true, followUps: true } },
@@ -151,7 +158,7 @@ export class LeadsService {
     return me.roles.includes(Role.CS) && !l.ownerId;
   }
 
-  private async load(me: AuthUser, id: string, edit = false) {
+  async load(me: AuthUser, id: string, edit = false) {
     const l = await this.prisma.lead.findUnique({ where: { id } });
     if (!l || !this.canSee(me, l)) throw new NotFoundException('线索不存在');
     if (edit && !this.canEdit(me, l)) throw new ForbiddenException('只能修改自己负责的线索');
@@ -212,9 +219,10 @@ export class LeadsService {
         followUps: { orderBy: { createdAt: 'desc' }, include: { user: { select: { id: true, name: true } } } },
         conversation: { select: { id: true, status: true, summary: true, account: { select: { name: true } } } },
         wecomContacts: { select: { staffId: true, name: true, addedAt: true, removedAt: true, channel: { select: { name: true } } } },
+        orders: { orderBy: { orderedAt: 'desc' }, take: 50 },
       },
     });
-    const { addresses, ...rest } = l;
+    const { addresses, orders, ...rest } = l;
     return {
       ...this.dto(rest as LeadRow, me),
       sources: l.sources,
@@ -223,6 +231,10 @@ export class LeadsService {
       conversation: l.conversation && { ...l.conversation, summary: l.conversation.summary?.replace(/1[3-9]\d{9}/g, (m) => maskPhone(m)) ?? null },
       wecomContacts: l.wecomContacts,
       addresses: addresses.map((a) => this.addressDto(a)),
+      orders: orders.map((o) => ({
+        id: o.id, tool: o.tool, externalNo: o.externalNo, amountCents: o.amountCents, quoteCents: o.quoteCents, contractNo: o.contractNo, product: o.product, quantity: o.quantity,
+        matchedBy: o.matchedBy, isRepeat: o.isRepeat, cancelled: o.cancelled, note: o.note, orderedAt: o.orderedAt, createdById: o.createdById,
+      })),
     };
   }
 
@@ -382,7 +394,29 @@ export class LeadsService {
       });
     });
     await this.audit.log(me?.id, 'lead.merge', keepId, { merged: dropId });
-    return result;
+    return (await this.refreshDeal(keepId)) ?? result;
+  }
+
+  /**
+   * M11 成交回写：按线索名下的订单重算成交金额、单数、首次成交时间和最近一单的工具。
+   * 有有效订单就标成“已成交”；订单都撤销关联或退款了，退回“跟进中”。
+   */
+  async refreshDeal(leadId: string) {
+    const lead = await this.prisma.lead.findUnique({ where: { id: leadId } });
+    if (!lead) return null;
+    const orders = await this.prisma.order.findMany({ where: { leadId, cancelled: false }, orderBy: { orderedAt: 'asc' } });
+    const won = orders.length > 0;
+    return this.prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        orderCount: orders.length,
+        dealCents: orders.reduce((n, o) => n + o.amountCents, 0),
+        dealTool: orders.at(-1)?.tool ?? null,
+        wonAt: orders[0]?.orderedAt ?? null,
+        ...(won && lead.status !== LeadStatus.WON ? { status: LeadStatus.WON } : {}),
+        ...(!won && lead.status === LeadStatus.WON ? { status: LeadStatus.FOLLOWING } : {}),
+      },
+    });
   }
 
   async markAddedWecom(leadId: string) {
@@ -442,8 +476,20 @@ export class LeadsService {
 
   private async saveAddress(leadId: string, p: Pick<ParsedAddress, 'name' | 'phone' | 'province' | 'city' | 'district' | 'detail'>, source: string, confirmed: boolean) {
     return this.prisma.address.create({
-      data: { leadId, receiverEnc: encrypt(p.name), phoneEnc: encrypt(p.phone), province: p.province, city: p.city, district: p.district, detailEnc: encrypt(p.detail), confirmed, source },
+      data: { leadId, receiverEnc: encrypt(p.name), phoneEnc: encrypt(p.phone), province: p.province, city: p.city, district: p.district, detailEnc: encrypt(p.detail), confirmed, source, ...addressHashes(p) },
     });
+  }
+
+  /** 早于 M11 的地址没有匹配用的哈希，启动时补上。 */
+  async backfillAddressHashes() {
+    for (;;) {
+      const rows = await this.prisma.address.findMany({ where: { phoneHash: null }, take: 200 });
+      if (!rows.length) return;
+      for (const a of rows) {
+        const h = addressHashes({ name: decrypt(a.receiverEnc), phone: decrypt(a.phoneEnc), province: a.province, city: a.city, district: a.district, detail: decrypt(a.detailEnc) });
+        await this.prisma.address.update({ where: { id: a.id }, data: { ...h, phoneHash: h.phoneHash ?? '' } });
+      }
+    }
   }
 
   // ---------- 人工操作 ----------
@@ -529,6 +575,9 @@ export class LeadsService {
     if (!a) throw new NotFoundException('地址不存在');
     const phone = b.phone !== undefined ? normalizePhone(b.phone) : undefined;
     if (phone === null) throw new BadRequestException('电话不是有效的手机号');
+    const merged = {
+      name: b.name ?? decrypt(a.receiverEnc), phone: phone ?? decrypt(a.phoneEnc), province: b.province ?? a.province, city: b.city ?? a.city, district: b.district ?? a.district, detail: b.detail ?? decrypt(a.detailEnc),
+    };
     await this.prisma.address.update({
       where: { id: addressId },
       data: {
@@ -539,6 +588,7 @@ export class LeadsService {
         ...(b.city !== undefined ? { city: b.city } : {}),
         ...(b.district !== undefined ? { district: b.district } : {}),
         ...(b.confirmed !== undefined ? { confirmed: b.confirmed } : {}),
+        ...addressHashes(merged),
       },
     });
     await this.audit.log(me.id, 'lead.address.update', id, { addressId });

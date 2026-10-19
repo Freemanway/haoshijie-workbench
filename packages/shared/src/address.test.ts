@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskPhone, parseAddress } from './address';
+import { addressKey, maskPhone, parseAddress } from './address';
 
 describe('parseAddress', () => {
   it('拆分整段地址', () => {
@@ -38,5 +38,20 @@ describe('parseAddress', () => {
 
   it('手机号脱敏', () => {
     expect(maskPhone('13812345678')).toBe('138****5678');
+  });
+});
+
+describe('addressKey', () => {
+  it('写法不同的同一地址得到同一个键', () => {
+    const a = addressKey('王晓雯', '广东省深圳市南山区粤海街道科技园南区8栋1203');
+    expect(a).toBe(addressKey('王晓雯', '深圳市 南山区 粤海街道科技园南区８栋１２０３'));
+    expect(a).toBe(addressKey('王晓雯 ', '广东 深圳 南山 粤海街道科技园南区8栋1203'));
+    expect(addressKey('李明', '上海上海市徐汇区漕溪北路100号')).toBe(addressKey('李明', '徐汇区漕溪北路 100 号'));
+  });
+
+  it('收件人不同或地址太短不算', () => {
+    expect(addressKey('王晓雯', '广东省深圳市南山区科技园')).not.toBe(addressKey('王小雯', '广东省深圳市南山区科技园'));
+    expect(addressKey('王晓雯', '深圳')).toBeNull();
+    expect(addressKey('', '广东省深圳市南山区科技园')).toBeNull();
   });
 });
