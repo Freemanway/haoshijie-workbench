@@ -509,7 +509,7 @@ export class InboxService {
   async tick(now = new Date(), force = false) {
     if (!force && !this.cronOn) return { retried: 0, escalated: 0 };
     const events = await this.prisma.inboundEvent.findMany({
-      where: { status: { in: ['pending', 'failed'] }, attempts: { lt: 5 }, createdAt: { lte: new Date(now.getTime() - 60_000) } },
+      where: { channel: { in: ['api', 'manual'] }, status: { in: ['pending', 'failed'] }, attempts: { lt: 5 }, createdAt: { lte: new Date(now.getTime() - 60_000) } },
       take: 50,
       orderBy: { createdAt: 'asc' },
     });

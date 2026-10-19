@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RiskModule } from './risk/risk.module';
 import { ScheduleModule as PublishScheduleModule } from './schedule/schedule.module';
 import { TopicsModule } from './topics/topics.module';
+import { CrmModule } from './wecom/crm.module';
 import { WecomModule } from './wecom/wecom.module';
 import { UsersModule } from './users/users.module';
 
@@ -38,6 +39,7 @@ import { UsersModule } from './users/users.module';
     TopicsModule,
     PublishScheduleModule,
     InboxModule,
+    CrmModule,
   ],
 })
 export class AppModule {}
