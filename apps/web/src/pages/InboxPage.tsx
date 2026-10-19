@@ -19,6 +19,7 @@ import {
   Switch,
   Tag,
   TimePicker,
+  Tooltip,
   Typography,
 } from 'antd';
 import dayjs from 'dayjs';
@@ -185,7 +186,7 @@ function Bubble({ m, canSend, onSent }: { m: Message; canSend: boolean; onSent: 
 
 /** 一个会话：客户摘要、消息、建议回复、回复框和接管操作。电脑端右栏和手机端整页共用。 */
 export function ConversationView({ id, compact, onChanged }: { id: string; compact?: boolean; onChanged?: () => void }) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { me, can } = useAuth();
   const canAct = can(...AGENT_ROLES);
   const [c, setC] = useState<Conversation | null>(null);
@@ -244,6 +245,19 @@ export function ConversationView({ id, compact, onChanged }: { id: string; compa
       setRiskError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+  const copyWecomLink = async () => {
+    try {
+      const r = await api<{ url: string; channel: { name: string } }>(`/wecom/conversation-link/${c.id}`);
+      try {
+        await navigator.clipboard.writeText(r.url);
+        message.success(`已复制「${r.channel.name}」的专属加微链接`);
+      } catch {
+        modal.info({ title: '专属加微链接', content: <Typography.Paragraph copyable>{r.url}</Typography.Paragraph> });
+      }
+    } catch (e) {
+      message.error((e as Error).message);
     }
   };
   const loadSuggest = () =>
@@ -322,6 +336,9 @@ export function ConversationView({ id, compact, onChanged }: { id: string; compa
             {['WAITING_AGENT', 'AGENT_HANDLING'].includes(c.status) && !others && (
               <Button loading={busy} onClick={() => act(() => api(`/inbox/conversations/${c.id}/release`, { method: 'POST' }), '已交还 AI')}>交还 AI</Button>
             )}
+            <Tooltip title="复制带这条会话参数的获客助手链接，客户点开加企业微信后，线索自动和这条会话对上。请按平台规则使用，小红书优先用主页的官方组件">
+              <Button loading={busy} onClick={copyWecomLink}>专属加微链接</Button>
+            </Tooltip>
             <Button loading={busy} onClick={() => act(() => api(`/inbox/conversations/${c.id}/status`, { method: 'POST', body: { status: 'DIVERTED' } }), '已标记为已引流')}>已引流</Button>
             <Popconfirm title="关闭这个会话？客户再发消息会重新打开" onConfirm={() => act(() => api(`/inbox/conversations/${c.id}/status`, { method: 'POST', body: { status: 'CLOSED' } }), '已关闭')}>
               <Button type="text" loading={busy}>关闭</Button>

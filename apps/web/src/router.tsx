@@ -11,6 +11,7 @@ import { RiskPage } from './pages/RiskPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { AccountsPage, MembersPage } from './pages/SettingsPages';
 import { TopicsPage } from './pages/TopicsPage';
+import { WecomPage } from './pages/WecomPage';
 
 interface NavItem {
   path: string;
@@ -34,6 +35,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
     group: '接待与客资',
     items: [
       { path: 'inbox', label: '收件箱', task: 'M8', roles: ['CS', 'BIZ', 'VIEWER'] },
+      { path: 'wecom', label: '私域引流', task: 'M9', roles: ['CS', 'BIZ', 'VIEWER'] },
       { path: 'leads', label: '线索库', task: 'M10' },
       { path: 'orders', label: '成交导入', task: 'M11' },
     ],
@@ -59,6 +61,7 @@ const built: Record<string, React.ReactNode> = {
   drafts: <DraftsPage />,
   schedule: <SchedulePage />,
   inbox: <InboxPage />,
+  wecom: <WecomPage />,
   risk: <RiskPage />,
   kb: <KnowledgePage />,
   leads: <AddressPage />,
