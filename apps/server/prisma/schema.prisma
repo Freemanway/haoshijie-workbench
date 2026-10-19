@@ -635,3 +635,18 @@ model OrderImport {
 
   orders Order[]
 }
+
+/// 周报、月报快照：生成时的指标（作品数据取当时的累计值）和 AI 解读
+model Report {
+  id        String    @id @default(cuid())
+  kind      String // week | month
+  from      String // 北京时间 YYYY-MM-DD，含
+  to        String // 北京时间 YYYY-MM-DD，含
+  data      Json
+  insight   Json? // { highlights, problems, suggestions }
+  llmCallId String?
+  pushedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([kind, from])
+}
