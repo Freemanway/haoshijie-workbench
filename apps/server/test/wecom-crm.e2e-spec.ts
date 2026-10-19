@@ -154,7 +154,7 @@ describe('企业微信私域（M9）', () => {
     expect(r.body.url).not.toContain('ch_');
 
     const c = await added('wm-2', 'zhaoshang', `cv_${conv.id}`);
-    expect(c.lead).toMatchObject({ conversationId: conv.id, nickname: '微信用户', status: 'ADDED_WECOM', sourceAccount: '好时节果园' });
+    expect(c.lead).toMatchObject({ conversationId: conv.id, nickname: '阿茶', status: 'ADDED_WECOM', sourceAccount: '好时节果园' });
     expect(c.channelId).toBe(r.body.channel.id);
     const after = await prisma.conversation.findUniqueOrThrow({ where: { id: conv.id }, include: { messages: true } });
     expect(after.status).toBe('DIVERTED');

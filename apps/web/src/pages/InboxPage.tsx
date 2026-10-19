@@ -54,6 +54,7 @@ interface Conversation {
   lastMessageAt: string;
   account: Account;
   agent: { id: string; name: string } | null;
+  lead?: { id: string; status: string } | null;
   last?: Message | null;
   messages?: Message[];
 }
@@ -283,6 +284,11 @@ export function ConversationView({ id, compact, onChanged }: { id: string; compa
       }
       extra={!compact && <Typography.Text type="secondary" style={{ fontSize: 12 }}>{PLATFORM_LABEL[c.account.platform]} · {c.account.name}{c.kind === 'comment' ? ' · 评论区' : ''}</Typography.Text>}
     >
+      {c.lead && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          已建线索：<Link to={`/leads?id=${c.lead.id}`}>查看线索</Link>
+        </Typography.Text>
+      )}
       {c.sourcePostUrl && (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           来源作品：<a href={c.sourcePostUrl} target="_blank" rel="noreferrer">{c.sourcePostUrl}</a>

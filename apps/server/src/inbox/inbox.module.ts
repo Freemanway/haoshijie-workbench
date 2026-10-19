@@ -29,6 +29,8 @@ import { ChatTurn, customerSummary, inboxReply, InboxReplyOut } from '../ai/prom
 import { AuthUser, CurrentUser, Public, Roles } from '../common/auth.decorators';
 import { ZodPipe } from '../common/zod.pipe';
 import { JobQueue } from '../drafts/job-queue';
+import { LeadsModule } from '../leads/leads.module';
+import { LeadsService, MessageAction } from '../leads/leads.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RiskModule, RiskService } from '../risk/risk.module';
 import { NotifyService } from '../wecom/wecom.module';
@@ -149,10 +151,12 @@ export class InboxService {
     private readonly notify: NotifyService,
     private readonly provider: ProviderClient,
     private readonly config: ConfigService,
+    private readonly leads: LeadsService,
   ) {}
 
-  idle() {
-    return this.queue.idle();
+  async idle() {
+    await this.queue.idle();
+    await this.leads.idle();
   }
 
   async settings(): Promise<Settings> {
@@ -219,14 +223,36 @@ export class InboxService {
       conv = await this.prisma.conversation.update({ where: { id: conv.id }, data: { status: ConversationStatus.AI_HANDLING, handoffReason: null, unmatched: 0, agentId: null, waitingSince: null, escalatedAt: null } });
     }
     const s = await this.settings();
+    // 先认手机号、收货地址和“确认”：地址要回显给客户核对，不在配送范围的转人工
+    // 评论区是公开的，不在评论里回显地址
+    const act = await this.leads.onCustomerMessage(conv.id, e.text, conv.status === ConversationStatus.AI_HANDLING && s.autoReply && conv.kind === 'dm').catch((err) => {
+      this.log.error(`识别联系方式失败：${(err as Error).message}`);
+      return {} as MessageAction;
+    });
+    if (act.note) await this.prisma.message.create({ data: { conversationId: conv.id, sender: 'system', text: act.note } });
     if (conv.status === ConversationStatus.AI_HANDLING) {
-      if (s.autoReply) await this.aiRespond(conv.id, e.text, s);
-      else await this.handoff(conv.id, HANDOFF.off, s, { silent: true });
+      if (!s.autoReply) await this.handoff(conv.id, HANDOFF.off, s, { silent: true });
+      else if (act.handoff) await this.handoff(conv.id, act.handoff, s);
+      else if (act.reply) await this.send(conv.id, { sender: 'ai', text: act.reply.text, meta: act.reply.meta });
+      else await this.aiRespond(conv.id, e.text, s);
+      await this.syncLead(conv.id);
       return;
     }
     if (conv.status === ConversationStatus.AGENT_HANDLING && conv.agentId) {
       const agent = await this.prisma.user.findUnique({ where: { id: conv.agentId } });
       if (agent) await this.notify.toUsers([agent.wecomId], `【新消息】${account.name} · ${conv.nickname ?? '客户'}：${e.text.slice(0, 60)}`);
+    }
+    await this.syncLead(conv.id);
+  }
+
+  /** 有效咨询（中高意向，或要人工、谈合作、投诉）建线索；已有线索同步客群和意向。 */
+  private async syncLead(conversationId: string) {
+    try {
+      const c = await this.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+      const valid = c.intent === 'high' || c.intent === 'medium' || [HANDOFF.human, HANDOFF.biz, HANDOFF.negative].includes(c.handoffReason ?? '');
+      await this.leads.syncConversation(conversationId, valid);
+    } catch (e) {
+      this.log.error(`同步线索失败：${(e as Error).message}`);
     }
   }
 
@@ -263,6 +289,7 @@ export class InboxService {
       facts: kb.facts.map((f) => ({ title: f.title, content: f.content.slice(0, 300) })),
       rules: kb.rules,
       diversion: s.diversion,
+      privacyNotice: (await this.leads.settings()).privacyNotice,
     };
     let out: InboxReplyOut;
     let callId: string;
@@ -443,7 +470,8 @@ export class InboxService {
     const messages = await this.prisma.message.findMany({ where: { conversationId: id }, orderBy: { createdAt: 'asc' } });
     const authors = await this.prisma.user.findMany({ where: { id: { in: [...new Set(messages.map((m) => m.authorId).filter((x): x is string => !!x))] } }, select: { id: true, name: true } });
     const names = new Map(authors.map((a) => [a.id, a.name]));
-    return { ...c, messages: messages.map((m) => ({ ...m, authorName: m.authorId ? names.get(m.authorId) : undefined })) };
+    const lead = await this.leads.leadForConversation(id);
+    return { ...c, lead: lead && { id: lead.id, status: lead.status }, messages: messages.map((m) => ({ ...m, authorName: m.authorId ? names.get(m.authorId) : undefined })) };
   }
 
   async detailOfMessage(externalId: string) {
@@ -640,5 +668,5 @@ export class InboxController {
   }
 }
 
-@Module({ imports: [RiskModule], providers: [InboxService, ProviderClient], controllers: [InboxController], exports: [InboxService] })
+@Module({ imports: [RiskModule, LeadsModule], providers: [InboxService, ProviderClient], controllers: [InboxController], exports: [InboxService] })
 export class InboxModule {}

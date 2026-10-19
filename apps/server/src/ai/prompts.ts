@@ -281,6 +281,8 @@ export interface InboxReplyInput {
   rules?: { avoid: string; instead: string }[];
   /** 按客群配置的引流话术（只用平台官方组件，不带微信号和电话） */
   diversion: { C: string; B: string };
+  /** 收集手机号、地址前要告知的用途（个人信息保护法告知同意） */
+  privacyNotice?: string;
 }
 
 const InboxReplyOut = z.object({
@@ -336,7 +338,7 @@ ${facts(i.facts)}${rulesText(i.rules)}
 
 引流话术（需要时原样或稍作改写使用）：
 - C 端：${i.diversion.C}
-- B 端：${i.diversion.B}
+- B 端：${i.diversion.B}${i.privacyNotice ? `\n\n需要客户留手机号或收货地址时，先告知用途：${i.privacyNotice}` : ''}
 
 输出：
 {"audience":"C|B|unknown","intent":"high|medium|low","wantsHuman":false,"negative":false,"bizDeal":false,"matched":true,"reply":"回复内容"}`,
@@ -404,4 +406,101 @@ ${facts(i.facts)}
       suggestedReply: i.faqs[0]?.answer ?? '你好，我是好时节的客服，刚看了你的问题，我来帮你处理～',
     };
   },
+};
+
+// ---------- 线索（M10） ----------
+
+export interface LeadExtractInput {
+  audience: 'C' | 'B' | null;
+  history: ChatTurn[];
+}
+
+const LeadExtractOut = z.object({
+  audience: z.enum(['C', 'B', 'unknown']),
+  intent: z.enum(['high', 'medium', 'low']),
+  name: z.string().nullable(),
+  wechat: z.string().nullable(),
+  /** C 端：scene 自吃/送礼/企业采购，quantity 份数；B 端：city、channel 渠道类型、volume 预计采购量、mode 合作方式 */
+  detail: z.record(z.string(), z.string().nullable()),
+  /** 一句话意向，用于列表展示 */
+  summary: z.string(),
+});
+export type LeadExtractOut = z.infer<typeof LeadExtractOut>;
+
+/** 从私信对话里提取线索字段（PRD 6.1“AI 从对话提取”）。手机号由程序按规则识别，不交给模型。 */
+export const leadExtract: PromptTemplate<LeadExtractInput, LeadExtractOut> = {
+  name: 'lead_extract',
+  version: 1,
+  temperature: 0,
+  system: `你是“好时节”无花果品牌的客资专员，从客户和客服的对话里提取线索信息。只写对话里客户明确说过的内容，没提到的填 null，不要猜。
+audience：B 端果商、代理、企业批量采购为 B，自己吃、送人为 C，看不出来为 unknown。
+intent：问价格、规格、下单、发货为 high；问品种、口感、保存为 medium；其他为 low。
+detail：C 端填 scene（自吃/送礼/企业采购）和 quantity（份数或斤数）；B 端填 city（所在城市）、channel（渠道类型，如水果店、商超、社区团购、电商）、volume（预计采购量）、mode（合作方式，如批发、代理、长期供货）。
+summary：一句话说清客户要什么，20 字以内。
+只输出 JSON，不要输出其他文字。`,
+  user: (i) => `目前判断的客群：${i.audience ?? '未知'}
+
+对话：
+${turns(i.history)}
+
+输出：{"audience":"C|B|unknown","intent":"high|medium|low","name":null,"wechat":null,"detail":{},"summary":"一句话意向"}`,
+  output: LeadExtractOut,
+  mock: (i): LeadExtractOut => {
+    const said = i.history.filter((t) => t.sender === 'customer').map((t) => t.text).join(' ');
+    const b = has(said, ['代理', '起订', '批发', '拿货', '供货', '水果店', '商超']) || i.audience === 'B';
+    const city = /([一-龥]{2,4})(市|这边|地区)/.exec(said)?.[1] ?? null;
+    const qty = /(\d+)\s*(份|盒|箱|斤)/.exec(said);
+    const wechat = /(?:微信|vx|VX|wx)[号:： ]*([A-Za-z][-_A-Za-z0-9]{5,19})/.exec(said)?.[1] ?? null;
+    const name = /我(?:叫|是)([一-龥]{2,3})(?![一-龥]*(?:店|公司|老板))/.exec(said)?.[1] ?? null;
+    const intent = has(said, ['多少钱', '价格', '怎么买', '下单', '发货', '规格', '起订']) ? 'high' : has(said, ['品种', '口感', '保存', '好吃']) ? 'medium' : 'low';
+    return b
+      ? { audience: 'B', intent, name, wechat, detail: { city, channel: has(said, ['水果店']) ? '水果店' : has(said, ['商超']) ? '商超' : null, volume: qty ? qty[0] : null, mode: has(said, ['代理']) ? '代理' : has(said, ['批发', '拿货']) ? '批发' : null }, summary: has(said, ['代理']) ? '咨询代理合作' : '咨询批发供货' }
+      : { audience: has(said, ['送', '自己吃', '尝鲜']) || i.audience === 'C' ? 'C' : 'unknown', intent, name, wechat, detail: { scene: has(said, ['送']) ? '送礼' : has(said, ['公司', '员工', '福利']) ? '企业采购' : has(said, ['自己吃', '尝鲜']) ? '自吃' : null, quantity: qty ? qty[0] : null }, summary: has(said, ['送']) ? '想买无花果送人' : '咨询无花果' };
+  },
+};
+
+export interface LeadScriptInput {
+  audience: 'C' | 'B';
+  status: string;
+  intentSummary: string | null;
+  detail: Record<string, string | null> | null;
+  followUps: { note: string; at: string }[];
+  history: ChatTurn[];
+  facts: { title: string; content: string }[];
+}
+
+const LeadScriptOut = z.object({
+  advice: z.string().min(1),
+  scripts: z.array(z.string().min(1)).min(1).max(3),
+});
+export type LeadScriptOut = z.infer<typeof LeadScriptOut>;
+
+/** 线索详情里的“推荐话术”：给负责人下一步怎么跟、可以直接发的话。 */
+export const leadScript: PromptTemplate<LeadScriptInput, LeadScriptOut> = {
+  name: 'lead_script',
+  version: 1,
+  temperature: 0.5,
+  system: `你是“好时节”无花果品牌的销售主管，帮负责人跟进线索。
+advice：下一步怎么跟，1–2 句（比如先确认什么、推荐什么规格、什么时候再联系）。
+scripts：1–3 条可以直接在企业微信里发的话，口语化，每条 60 字以内，只用品牌资料里的事实；C 端侧重品种、礼盒、团购群福利，B 端侧重供货周期、起订量、对接方式。
+${COMPLIANCE}
+只输出 JSON，不要输出其他文字。`,
+  user: (i) => `客群：${i.audience === 'C' ? 'C 端消费者' : 'B 端果商'}，状态：${i.status}
+意向：${i.intentSummary ?? '未知'}；${Object.entries(i.detail ?? {}).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join('，') || '无更多信息'}
+
+跟进记录：
+${i.followUps.map((f) => `- ${f.at} ${f.note}`).join('\n') || '（还没有）'}
+
+私信对话：
+${turns(i.history)}
+
+品牌资料：
+${facts(i.facts)}
+
+输出：{"advice":"下一步建议","scripts":["话术1","话术2"]}`,
+  output: LeadScriptOut,
+  mock: (i) =>
+    i.audience === 'B'
+      ? { advice: '先确认对方所在城市和渠道类型，再发供货方案和起订量说明。', scripts: ['你好，我是好时节招商，方便说下你在哪个城市、做什么渠道吗？我按你的情况发供货方案。', '我们产地直发，供货周期和起订量我整理了一份说明，发你看看～'] }
+      : { advice: i.followUps.length ? '已经联系过，可以邀请进团购群看当季实拍和优惠。' : '先打个招呼，问清楚是自己吃还是送人，再推荐规格。', scripts: ['你好呀，我是好时节的小鲜～想问下是自己吃还是送人呢？我帮你推荐合适的规格。', '这周有新到的鲜果，团购群里有实拍和优惠，需要的话我拉你进群～'] },
 };
