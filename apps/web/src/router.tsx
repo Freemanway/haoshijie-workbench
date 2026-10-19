@@ -3,6 +3,7 @@ import { AppLayout } from './layout/AppLayout';
 import { RequireAuth } from './lib/auth';
 import { AddressPage } from './pages/AddressPage';
 import { DraftDetailPage, DraftsPage } from './pages/DraftsPage';
+import { InboxPage, MobileInbox } from './pages/InboxPage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { Placeholder } from './pages/Placeholder';
@@ -32,7 +33,7 @@ export const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: '接待与客资',
     items: [
-      { path: 'inbox', label: '收件箱', task: 'M8' },
+      { path: 'inbox', label: '收件箱', task: 'M8', roles: ['CS', 'BIZ', 'VIEWER'] },
       { path: 'leads', label: '线索库', task: 'M10' },
       { path: 'orders', label: '成交导入', task: 'M11' },
     ],
@@ -57,6 +58,7 @@ const built: Record<string, React.ReactNode> = {
   topics: <TopicsPage />,
   drafts: <DraftsPage />,
   schedule: <SchedulePage />,
+  inbox: <InboxPage />,
   risk: <RiskPage />,
   kb: <KnowledgePage />,
   leads: <AddressPage />,
@@ -66,6 +68,8 @@ const built: Record<string, React.ReactNode> = {
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  // 手机端接待：企业微信里打开，不带侧边栏
+  ...['/m/inbox', '/m/inbox/:id'].map((path) => ({ path, element: <RequireAuth><MobileInbox /></RequireAuth> })),
   {
     path: '/',
     element: (
@@ -80,6 +84,7 @@ export const router = createBrowserRouter([
         element: built[i.path] ?? <Placeholder title={i.label} task={i.task} />,
       })),
       { path: 'drafts/:id', element: <DraftDetailPage /> },
+      { path: 'inbox/:id', element: <InboxPage /> },
     ],
   },
 ]);

@@ -70,6 +70,11 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `GET /api/schedule?from=&to=`、`POST /api/schedule` `{ draftId, accountIds, publishAt }`、`PATCH/DELETE /api/schedule/:id` | 排期日历；只排审核通过的稿件，受账号每日上限约束，多账号发同一篇时提示做差异化；改期、换账号、取消 | M7-1 |
 | `GET /api/schedule/today`、`GET /api/schedule/:id/package`、`POST …/publish` `{ postUrl }`、`POST …/fail` `{ reason }` | 今日待发、素材包（文案、配图建议、素材库里标签匹配的图片）、回填作品链接、标记发布失败 | M7-2 |
 | `GET /api/schedule/metrics-due`、`POST /api/schedule/:id/metrics` `{ checkpoint: '24h'\|'7d', reads, likes, saves, comments }` | 待回填数据、回填发布 24 小时 / 7 天数据 | M7-3 |
+| `POST /api/inbox/manual` `{ accountId, kind, nickname, text, postUrl? }` | 半自动接入：客服贴入小红书私信或咨询评论，AI 立即回复（待复制发送） | M8-1 |
+| `POST /api/inbox/webhook` `{ events: [{ id, accountId, kind, userId, nickname?, text, postUrl? }] }` | 实时接入：授权服务商推送消息，请求体用 `INBOX_WEBHOOK_SECRET` 做 HMAC-SHA256 放在 `X-Hsj-Signature`；先落库再处理，重复推送只处理一次，失败定时重试 | M8-1 |
+| `GET /api/inbox/conversations?status=&accountId=&mine=&q=`、`GET …/:id` | 统一收件箱：会话列表（五种状态计数）、会话详情 | M8-2 |
+| `POST …/:id/claim`、`/messages` `{ text }`、`/summary`、`/handoff`、`/release`、`/status`、`PATCH /api/inbox/messages/:id/sent` | 客服接管、回复（发出前风控）、客户摘要与建议回复、转人工、交还 AI、标记已引流/关闭、半自动消息标记已发送 | M8-4、M8-5 |
+| `GET/PUT /api/inbox/settings` | 接待设置：自动应答开关、人工工作时间、响应时限、转人工和非工作时间话术、C/B 引流话术 | M8-3、M8-4 |
 | `POST /api/leads/parse-address` `{ raw }` | 整段地址拆成收件人、电话、省市区、详细地址，校验配送范围 | M10-2 |
 
 ## 大模型
@@ -83,6 +88,7 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 - 知识库里的“合规口径”条目作为改写规则交给模型，不当作事实写进稿件。
 - 每周四 9:00（北京时间）自动生成下周选题清单，可在“选题清单 > 配额与类别”里关闭，部署时也可用 `CRON_ENABLED=false` 关闭。
 - 定时任务（`CRON_ENABLED=false` 可全部关闭）：每分钟检查到点排期并提醒内容运营去发；每小时检查发布满 24 小时、7 天的作品并提醒回填数据；周四生成选题清单后也会提醒。
+- 收件箱：AI 每轮判断客群和意向，按 FAQ 和品牌资料回复，发出前过风控（拦截时重写一次，仍不合规就转人工）。客户要求人工、B 端谈价格合作、投诉售后、连续 2 轮答不上、回复无法通过风控时转人工；工作时间内超过响应时限提醒客服和管理员，非工作时间告知上班时间并引导留资。AI 回复命中的 FAQ 会计入每周选题的“私信高频问题”。手机端在企业微信里打开 `/m/inbox`。
 - 提醒走企业微信应用消息（`WECOM_*`），没配置时只写日志。
 - 稿件生成在进程内排队（同时最多 2 个）；多实例部署时换成 Redis + BullMQ。
 

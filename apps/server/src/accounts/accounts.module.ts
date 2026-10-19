@@ -12,6 +12,8 @@ const AccountInput = z.object({
   audience: z.nativeEnum(Audience),
   externalId: z.string().optional(),
   dailyPostCap: z.number().int().min(1).max(20).default(2),
+  /** 私信接入方式：manual 半自动 | api 经授权服务商实时收发 */
+  inboxMode: z.enum(['manual', 'api']).default('manual'),
 });
 
 /** M1-3 平台账号绑定：一期小红书多账号，每个账号对应客群和每日发布上限。 */
