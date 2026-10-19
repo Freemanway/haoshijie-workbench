@@ -27,6 +27,7 @@ import { AuthUser, CurrentUser, Roles } from '../common/auth.decorators';
 import { ZodPipe } from '../common/zod.pipe';
 import { DraftsModule, DraftsService } from '../drafts/drafts.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../wecom/wecom.module';
 
 const Ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日期格式应为 YYYY-MM-DD');
 
@@ -76,6 +77,7 @@ export class TopicsService {
     private readonly ai: AiService,
     private readonly drafts: DraftsService,
     private readonly config: ConfigService,
+    private readonly notify: NotifyService,
   ) {}
 
   async settings(): Promise<Settings> {
@@ -267,7 +269,7 @@ export class TopicsService {
     try {
       await this.generateWeekly(nextMonday());
       this.log.log('已生成下周选题清单');
-      // TODO(M8 企业微信通知)：推送给内容运营
+      await this.notify.toRoles([Role.CONTENT], '【选题清单】下周的选题清单已生成，请到工作台“选题”里确认。');
     } catch (e) {
       if (!(e instanceof ConflictException)) this.log.error(`自动生成下周选题失败：${(e as Error).message}`);
     }

@@ -2,8 +2,9 @@ import { Injectable, ServiceUnavailableException, UnauthorizedException } from '
 import { ConfigService } from '@nestjs/config';
 
 /**
- * 企业微信接口（扫码登录用到的部分）。
+ * 企业微信接口：扫码登录、应用消息推送。
  * 文档：https://developer.work.weixin.qq.com/document/path/98152（网页登录）
+ *       https://developer.work.weixin.qq.com/document/path/90236（发送应用消息）
  */
 @Injectable()
 export class WecomClient {
@@ -34,6 +35,23 @@ export class WecomClient {
     const userId = (r.userid ?? r.UserId) as string | undefined;
     if (!userId) throw new UnauthorizedException('只有企业成员可以登录');
     return userId;
+  }
+
+  /** 以自建应用身份给成员发文本消息（成员 userid 即工作台里的企业微信账号）。 */
+  async sendText(userIds: string[], content: string) {
+    const token = await this.accessToken();
+    const res = await fetch(`https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        touser: userIds.join('|'),
+        msgtype: 'text',
+        agentid: Number(this.config.getOrThrow('WECOM_AGENT_ID')),
+        text: { content },
+      }),
+    });
+    const body = (await res.json()) as Record<string, unknown>;
+    if (body.errcode) throw new ServiceUnavailableException(`企业微信发消息失败：${body.errcode} ${body.errmsg}`);
   }
 
   private async accessToken() {

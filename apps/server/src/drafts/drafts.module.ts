@@ -27,7 +27,7 @@ import { JobQueue } from './job-queue';
 /** 可以改稿的状态；进入审核后由审核人处理（M6）。 */
 const EDITABLE: DraftStatus[] = [DraftStatus.DRAFT, DraftStatus.REJECTED];
 
-const VersionInput = z.object({
+export const VersionInput = z.object({
   title: z.string().trim().min(1, '请填写标题'),
   body: z.string().trim().min(1, '请填写正文'),
   tags: z.array(z.string().trim().min(1)).default([]),
@@ -151,21 +151,30 @@ export class DraftsService implements OnApplicationShutdown {
     return version;
   }
 
-  private async editable(id: string) {
+  private async editable(id: string, statuses: DraftStatus[] = EDITABLE) {
     const draft = await this.prisma.draft.findUnique({
       where: { id },
       include: { topic: true, versions: { orderBy: { index: 'asc' } } },
     });
     if (!draft) throw new NotFoundException('稿件不存在');
-    if (!EDITABLE.includes(draft.status)) throw new ConflictException('当前状态不能修改稿件');
+    if (!statuses.includes(draft.status)) throw new ConflictException('当前状态不能修改稿件');
     return draft;
   }
 
-  async editVersion(id: string, versionId: string, input: z.infer<typeof VersionInput>) {
-    const draft = await this.editable(id);
-    if (!draft.versions.some((v) => v.id === versionId)) throw new NotFoundException('版本不存在');
-    const index = draft.versions.length + 1;
-    return this.saveVersion(id, index, { ...input }, { chosen: true, modelName: null, note: `人工修改（基于版本 ${draft.versions.find((v) => v.id === versionId)!.index}）` });
+  async editVersion(id: string, versionId: string, input: z.infer<typeof VersionInput>, opts: { statuses?: DraftStatus[]; by?: string } = {}) {
+    const draft = await this.editable(id, opts.statuses);
+    const base = draft.versions.find((v) => v.id === versionId);
+    if (!base) throw new NotFoundException('版本不存在');
+    const version = await this.saveVersion(id, draft.versions.length + 1, { ...input }, { chosen: true, modelName: null, note: `${opts.by ?? '人工'}修改（基于版本 ${base.index}）` });
+    return { base, version };
+  }
+
+  /** 当前采用版本的风控和规格检查结果，提交审核和通过前用。 */
+  async chosenCheck(id: string) {
+    const v = await this.prisma.draftVersion.findFirst({ where: { draftId: id, chosen: true } });
+    if (!v) return null;
+    const r = await this.risk.check({ text: [v.title, v.body, v.tags.join(' ')].join('\n'), platform: Platform.XHS });
+    return { version: v, blocked: r.blocked, blockedWords: r.hits.filter((h) => h.level === 'block').map((h) => h.matched), problems: checkXhsDraft(v) };
   }
 
   async rewrite(id: string, input: z.infer<typeof RewriteInput>, userId: string) {
@@ -204,7 +213,12 @@ export class DraftsService implements OnApplicationShutdown {
   async detail(id: string) {
     const draft = await this.prisma.draft.findUnique({
       where: { id },
-      include: { topic: true, versions: { orderBy: { index: 'desc' } } },
+      include: {
+        topic: true,
+        versions: { orderBy: { index: 'desc' } },
+        reviews: { orderBy: { createdAt: 'desc' }, include: { reviewer: { select: { name: true } } } },
+        schedules: { include: { account: { select: { id: true, name: true } } }, orderBy: { publishAt: 'asc' } },
+      },
     });
     if (!draft) throw new NotFoundException('稿件不存在');
     const versions = await Promise.all(
@@ -270,8 +284,8 @@ class DraftsController {
 
   @Roles(Role.CONTENT)
   @Patch(':id/versions/:versionId')
-  edit(@Param('id') id: string, @Param('versionId') versionId: string, @Body(new ZodPipe(VersionInput)) body: z.infer<typeof VersionInput>) {
-    return this.drafts.editVersion(id, versionId, body);
+  async edit(@Param('id') id: string, @Param('versionId') versionId: string, @Body(new ZodPipe(VersionInput)) body: z.infer<typeof VersionInput>) {
+    return (await this.drafts.editVersion(id, versionId, body)).version;
   }
 
   @Roles(Role.CONTENT)
