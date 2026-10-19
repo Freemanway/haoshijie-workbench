@@ -4,7 +4,8 @@ import { AUDIENCE_LABEL, PLATFORM_LABEL, ROLE_LABEL } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 interface User { id: string; wecomId: string; name: string; roles: string[]; active: boolean }
-interface Account { id: string; platform: string; name: string; audience: string; externalId: string | null; dailyPostCap: number }
+interface Account { id: string; platform: string; name: string; audience: string; externalId: string | null; dailyPostCap: number; inboxMode: string }
+const INBOX_MODE: Record<string, string> = { manual: '半自动（客服贴入、复制发送）', api: '实时（授权服务商）' };
 
 const options = (m: Record<string, string>) => Object.entries(m).map(([value, label]) => ({ value, label }));
 
@@ -67,14 +68,14 @@ export function AccountsPage() {
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <div>
         <Typography.Title level={3} style={{ margin: 0 }}>平台账号</Typography.Title>
-        <Typography.Text type="secondary">一期只接小红书；每个账号的每日发布上限用于排期提醒</Typography.Text>
+        <Typography.Text type="secondary">一期只接小红书；每日发布上限用于排期，私信接入方式决定收件箱里的回复怎么发出</Typography.Text>
       </div>
       <CrudTable<Account>
         entity="账号"
         listPath="/accounts"
         basePath="/accounts"
         canEdit={can('ADMIN')}
-        initialValues={{ platform: 'XHS', audience: 'C', dailyPostCap: 2 }}
+        initialValues={{ platform: 'XHS', audience: 'C', dailyPostCap: 2, inboxMode: 'manual' }}
         toBody={(v) => ({ ...v, externalId: v.externalId || undefined })}
         columns={[
           { title: '平台', dataIndex: 'platform', render: (p: string) => PLATFORM_LABEL[p] ?? p },
@@ -82,6 +83,7 @@ export function AccountsPage() {
           { title: '面向', dataIndex: 'audience', render: (a: string) => AUDIENCE_LABEL[a] ?? a },
           { title: '平台账号 ID', dataIndex: 'externalId', render: (s: string | null) => s ?? '—' },
           { title: '每日发布上限', dataIndex: 'dailyPostCap' },
+          { title: '私信接入', dataIndex: 'inboxMode', render: (m: string) => INBOX_MODE[m] ?? m },
         ]}
         form={
           <>
@@ -90,6 +92,7 @@ export function AccountsPage() {
             <Form.Item label="面向客户" name="audience"><Select options={options(AUDIENCE_LABEL)} /></Form.Item>
             <Form.Item label="平台账号 ID（选填）" name="externalId"><Input placeholder="如小红书号" /></Form.Item>
             <Form.Item label="每日发布上限" name="dailyPostCap"><InputNumber min={1} max={20} /></Form.Item>
+            <Form.Item label="私信接入" name="inboxMode" extra="实时接入需要先签约小红书授权的客服服务商，并配置消息接收接口"><Select options={options(INBOX_MODE)} /></Form.Item>
           </>
         }
       />

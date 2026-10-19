@@ -191,7 +191,7 @@ function mockVersion(topic: DraftTopic, f: { title: string; content: string }[],
   return {
     title,
     body: clip(body, XHS_LIMITS.body),
-    tags: ['无花果', '好时节', topic.category, topic.audience === 'C' ? '秋天的第一口鲜果' : '水果批发', '产地直发', ...(topic.seasonTag ? [topic.seasonTag] : [])],
+    tags: ['无花果', '好时节', topic.category, topic.audience === 'C' ? '秋日鲜果' : '水果批发', '产地直发', ...(topic.seasonTag ? [topic.seasonTag] : [])],
     coverPrompt: `清晨果园里刚摘下的无花果切面特写，果肉饱满，暖色自然光，浅景深，小红书封面风格，${k % 2 === 0 ? '生活感' : '干净留白'}`,
     imageTips: ['果园枝头实拍', '切面特写', '礼盒或打包场景'],
   };
@@ -262,3 +262,146 @@ ${VERSION_FORMAT}`,
   },
 };
 
+
+// ---------- 私信接待（M8） ----------
+
+export interface ChatTurn {
+  sender: string; // customer | ai | agent | system
+  text: string;
+}
+
+export interface InboxReplyInput {
+  platformName: string;
+  accountAudience: 'C' | 'B';
+  history: ChatTurn[];
+  message: string;
+  kind: 'dm' | 'comment';
+  faqs: { question: string; answer: string }[];
+  facts: { title: string; content: string }[];
+  rules?: { avoid: string; instead: string }[];
+  /** 按客群配置的引流话术（只用平台官方组件，不带微信号和电话） */
+  diversion: { C: string; B: string };
+}
+
+const InboxReplyOut = z.object({
+  audience: z.enum(['C', 'B', 'unknown']),
+  intent: z.enum(['high', 'medium', 'low']),
+  /** 客户明确要求人工 */
+  wantsHuman: z.boolean(),
+  /** 投诉、售后、情绪负面 */
+  negative: z.boolean(),
+  /** B 端询价、问起订量、谈代理合作 */
+  bizDeal: z.boolean(),
+  /** 回答用到了 FAQ 或品牌资料；资料里找不到答案时为 false */
+  matched: z.boolean(),
+  reply: z.string().min(1),
+});
+export type InboxReplyOut = z.infer<typeof InboxReplyOut>;
+
+const turns = (h: ChatTurn[]) =>
+  h.length ? h.map((t) => `${t.sender === 'customer' ? '客户' : t.sender === 'agent' ? '客服' : t.sender === 'ai' ? '你' : '系统'}：${t.text}`).join('\n') : '（第一句）';
+
+const faqText = (faqs: { question: string; answer: string }[]) =>
+  faqs.length ? faqs.map((f, n) => `${n + 1}. 问：${f.question}\n   答：${f.answer}`).join('\n') : '（没有匹配的 FAQ）';
+
+const has = (s: string, words: string[]) => words.some((w) => s.includes(w));
+
+export const inboxReply: PromptTemplate<InboxReplyInput, InboxReplyOut> = {
+  name: 'inbox_reply',
+  version: 1,
+  temperature: 0.3,
+  system: `你是“好时节”无花果品牌在小红书的客服，替品牌回复私信和评论区的咨询。好时节做无花果产地直供：C 端是 30–40 岁中产女性，自己吃或送礼；B 端是果商、代理商、企业采购。
+要求：
+- 只根据“FAQ”和“品牌资料”回答，资料里没有的（价格、库存、发货时间等）不要编，说“我帮你问一下同事”并把 matched 设为 false。
+- 回复简短口语化，1–3 句，不超过 120 字，像真人客服；评论区回复更短，引导“私信我”。
+- C 端侧重品种推荐、礼赠场景，需要深入沟通时用 C 端引流话术；B 端侧重供货周期、起订量、对接人，用 B 端引流话术。
+- 判断客群：问起订量、批发价、代理、长期供货、开发票走公司 → B；自己吃、送人、尝鲜 → C；看不出来 → unknown。
+- 判断意向：问价格、规格、下单方式、发货 → high；问品种、口感、保存 → medium；闲聊 → low。
+- 客户要求人工、投诉售后或情绪不满、B 端谈价格和合作时，照常礼貌回复一句，并把对应字段设为 true，系统会转人工。
+${COMPLIANCE}
+只输出 JSON，不要输出其他文字。`,
+  user: (i) => `平台：${i.platformName}（${i.kind === 'comment' ? '作品评论区' : '私信'}）
+账号主要客群：${i.accountAudience === 'C' ? 'C 端消费者' : 'B 端果商'}
+
+之前的对话：
+${turns(i.history)}
+
+客户刚发来：${i.message}
+
+FAQ：
+${faqText(i.faqs)}
+
+品牌资料：
+${facts(i.facts)}${rulesText(i.rules)}
+
+引流话术（需要时原样或稍作改写使用）：
+- C 端：${i.diversion.C}
+- B 端：${i.diversion.B}
+
+输出：
+{"audience":"C|B|unknown","intent":"high|medium|low","wantsHuman":false,"negative":false,"bizDeal":false,"matched":true,"reply":"回复内容"}`,
+  output: InboxReplyOut,
+  mock: (i) => {
+    const m = i.message;
+    const bizDeal = has(m, ['代理', '起订', '批发', '拿货', '多少斤', '供货', '合作', '采购']);
+    const audience = bizDeal || has(m, ['公司', '开票']) ? 'B' : has(m, ['送人', '送礼', '自己吃', '尝鲜', '好吃']) ? 'C' : i.accountAudience === 'B' ? 'unknown' : 'C';
+    const wantsHuman = has(m, ['人工', '真人', '客服']);
+    const negative = has(m, ['投诉', '烂了', '坏了', '退款', '差评', '太差', '生气']);
+    const faq = i.faqs[0];
+    const intent = has(m, ['多少钱', '价格', '怎么买', '下单', '发货', '规格']) || bizDeal ? 'high' : faq ? 'medium' : 'low';
+    const reply = faq
+      ? `${faq.answer}${i.kind === 'comment' ? ' 更多可以私信我哦～' : ''}`
+      : bizDeal
+        ? `感谢关注好时节！合作和价格我请招商同事跟你细聊。${i.diversion.B}`
+        : '这个问题我帮你问一下同事，稍后回复你～';
+    return { audience, intent, wantsHuman, negative, bizDeal, matched: Boolean(faq), reply };
+  },
+};
+
+export interface CustomerSummaryInput {
+  platformName: string;
+  accountName: string;
+  sourcePostUrl?: string | null;
+  history: ChatTurn[];
+  faqs: { question: string; answer: string }[];
+  facts: { title: string; content: string }[];
+}
+
+const CustomerSummaryOut = z.object({
+  summary: z.string().min(1),
+  suggestedReply: z.string().min(1),
+});
+export type CustomerSummaryOut = z.infer<typeof CustomerSummaryOut>;
+
+/** 转人工后给客服看的客户摘要和建议回复（客服确认后才发出）。 */
+export const customerSummary: PromptTemplate<CustomerSummaryInput, CustomerSummaryOut> = {
+  name: 'customer_summary',
+  version: 1,
+  temperature: 0.3,
+  system: `你是“好时节”无花果品牌的客服主管，帮接手的客服快速了解客户。
+summary：3 句以内，写清客户是谁（C 端自己吃/送礼，或 B 端果商/代理/企业采购）、想要什么（品种、数量、预算、时间、地区）、卡在哪里、情绪如何；没提到的不写。
+suggestedReply：客服接下来可以发的一句回复，1–3 句，口语化，只用 FAQ 和品牌资料里的事实。
+${COMPLIANCE}
+只输出 JSON，不要输出其他文字。`,
+  user: (i) => `平台：${i.platformName}，账号：${i.accountName}${i.sourcePostUrl ? `，客户来自作品 ${i.sourcePostUrl}` : ''}
+
+对话：
+${turns(i.history)}
+
+FAQ：
+${faqText(i.faqs)}
+
+品牌资料：
+${facts(i.facts)}
+
+输出：{"summary":"客户摘要","suggestedReply":"建议回复"}`,
+  output: CustomerSummaryOut,
+  mock: (i) => {
+    const asks = i.history.filter((t) => t.sender === 'customer').map((t) => t.text);
+    const last = asks.at(-1) ?? '';
+    return {
+      summary: `客户共发了 ${asks.length} 条消息，最近一条：“${clip(last, 40)}”。${asks.some((a) => has(a, ['代理', '起订', '批发', '拿货'])) ? '像是 B 端果商，在问合作。' : '像是 C 端消费者。'}`,
+      suggestedReply: i.faqs[0]?.answer ?? '你好，我是好时节的客服，刚看了你的问题，我来帮你处理～',
+    };
+  },
+};

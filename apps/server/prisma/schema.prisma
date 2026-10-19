@@ -13,17 +13,17 @@ datasource db {
 // ---------- 账号与权限（PRD 10.1） ----------
 
 enum Role {
-  ADMIN      // 管理员
-  CONTENT    // 内容运营
-  REVIEWER   // 审核人
-  CS         // 客服
-  BIZ        // 招商（B端销售）
-  VIEWER     // 管理层（只读）
+  ADMIN // 管理员
+  CONTENT // 内容运营
+  REVIEWER // 审核人
+  CS // 客服
+  BIZ // 招商（B端销售）
+  VIEWER // 管理层（只读）
 }
 
 enum Platform {
-  XHS     // 小红书（一期）
-  DOUYIN  // 抖音（二期）
+  XHS // 小红书（一期）
+  DOUYIN // 抖音（二期）
   WECHAT_CHANNELS // 视频号（二期）
 }
 
@@ -40,9 +40,10 @@ model User {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  reviews   ReviewLog[]
-  leads     Lead[]      @relation("LeadOwner")
-  followUps FollowUp[]
+  reviews       ReviewLog[]
+  leads         Lead[]         @relation("LeadOwner")
+  conversations Conversation[] @relation("ConversationAgent")
+  followUps     FollowUp[]
 }
 
 model PlatformAccount {
@@ -52,6 +53,7 @@ model PlatformAccount {
   audience     Audience // 账号主要面向的客群
   externalId   String?
   dailyPostCap Int      @default(2) // 发布频率上限（PRD 10.2 平台合规）
+  inboxMode    String   @default("manual") // 私信接入：manual 半自动（客服贴入、复制发送）| api 经授权服务商实时收发
   createdAt    DateTime @default(now())
 
   schedules     ScheduleItem[]
@@ -61,7 +63,7 @@ model PlatformAccount {
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
-  action    String   // 如 lead.export、lead.reveal_phone
+  action    String // 如 lead.export、lead.reveal_phone
   target    String?
   detail    Json?
   createdAt DateTime @default(now())
@@ -73,7 +75,7 @@ model AuditLog {
 
 model KnowledgeItem {
   id        String   @id @default(cuid())
-  kind      String   // variety 品种 | origin 产地 | season 上市时间 | price 价格规格 | compliance 合规表述范例
+  kind      String // variety 品种 | origin 产地 | season 上市时间 | price 价格规格 | compliance 合规表述范例
   title     String
   content   String
   updatedAt DateTime @updatedAt
@@ -82,19 +84,19 @@ model KnowledgeItem {
 }
 
 model FaqItem {
-  id        String   @id @default(cuid())
-  category  String   // 价格规格、品种区别、上市时间、配送范围、保存方法、售后、企业采购、代理政策
+  id        String    @id @default(cuid())
+  category  String // 价格规格、品种区别、上市时间、配送范围、保存方法、售后、企业采购、代理政策
   question  String
   answer    String
   audience  Audience?
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime  @updatedAt
 }
 
 model Asset {
   id        String   @id @default(cuid())
   title     String
   url       String
-  kind      String   // image | video
+  kind      String // image | video
   tags      String[]
   createdAt DateTime @default(now())
 }
@@ -102,11 +104,11 @@ model Asset {
 // ---------- 内容生产（PRD 4.1–4.5） ----------
 
 enum TopicStatus {
-  PROPOSED   // AI 建议，待运营确认（每周选题清单）
-  IDLE       // 待用
-  SCHEDULED  // 已排期
-  PUBLISHED  // 已发布
-  ARCHIVED   // 归档
+  PROPOSED // AI 建议，待运营确认（每周选题清单）
+  IDLE // 待用
+  SCHEDULED // 已排期
+  PUBLISHED // 已发布
+  ARCHIVED // 归档
 }
 
 enum TopicSource {
@@ -124,9 +126,9 @@ model Topic {
   seasonTag     String?
   status        TopicStatus @default(IDLE)
   source        TopicSource @default(MANUAL)
-  reason        String?     // AI 给出的选题理由
+  reason        String? // AI 给出的选题理由
   suggestedDate DateTime?
-  weekOf        DateTime?   // 所属的每周选题清单（周一日期）
+  weekOf        DateTime? // 所属的每周选题清单（周一日期）
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -137,7 +139,9 @@ model Topic {
   @@index([status])
 }
 
-/** 选题类别，预置 C 端 6 类、B 端 5 类，可增删（PRD 4.1）。 */
+/**
+ * 选题类别，预置 C 端 6 类、B 端 5 类，可增删（PRD 4.1）。
+ */
 model TopicCategory {
   id       String   @id @default(cuid())
   audience Audience
@@ -147,22 +151,26 @@ model TopicCategory {
   @@unique([audience, name])
 }
 
-/** 系统配置（每周选题配额、季节节点等），值为 JSON。 */
+/**
+ * 系统配置（每周选题配额、季节节点等），值为 JSON。
+ */
 model Setting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
 }
 
-/** 大模型调用日志：每次调用都留痕，可追溯到提示词模板版本、输入输出和费用（M4-1）。 */
+/**
+ * 大模型调用日志：每次调用都留痕，可追溯到提示词模板版本、输入输出和费用（M4-1）。
+ */
 model LlmCall {
   id           String   @id @default(cuid())
-  purpose      String   // topics | draft | rewrite …
-  template     String   // 提示词模板名@版本
+  purpose      String // topics | draft | rewrite …
+  template     String // 提示词模板名@版本
   provider     String
   model        String
   userId       String?
-  refType      String?  // topic | draft
+  refType      String? // topic | draft
   refId        String?
   messages     Json
   output       String?
@@ -179,8 +187,8 @@ model LlmCall {
 }
 
 enum DraftStatus {
-  GENERATING        // AI 生成中
-  GENERATE_FAILED   // AI 生成失败，可重试
+  GENERATING // AI 生成中
+  GENERATE_FAILED // AI 生成失败，可重试
   DRAFT
   PENDING_REVIEW
   APPROVED
@@ -191,14 +199,14 @@ enum DraftStatus {
 }
 
 model Draft {
-  id        String      @id @default(cuid())
-  topicId   String
-  platform  Platform
-  status    DraftStatus @default(DRAFT)
+  id           String      @id @default(cuid())
+  topicId      String
+  platform     Platform
+  status       DraftStatus @default(DRAFT)
   rejectReason String?
-  error     String?     // 生成失败原因
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  error        String? // 生成失败原因
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   topic     Topic          @relation(fields: [topicId], references: [id])
   versions  DraftVersion[]
@@ -216,8 +224,8 @@ model DraftVersion {
   coverPrompt String?
   imageTips   String[] // 配图建议
   chosen      Boolean  @default(false)
-  modelName   String?  // 生成所用模型，AI 输出可追溯；人工修改为空
-  note        String?  // 这个版本怎么来的：首次生成、改语气、按驳回原因重写、人工修改…
+  modelName   String? // 生成所用模型，AI 输出可追溯；人工修改为空
+  note        String? // 这个版本怎么来的：首次生成、改语气、按驳回原因重写、人工修改…
   llmCallId   String?
   createdAt   DateTime @default(now())
 
@@ -230,9 +238,9 @@ model ReviewLog {
   id         String   @id @default(cuid())
   draftId    String
   reviewerId String
-  action     String   // submit | withdraw | approve | reject | edit | comment
+  action     String // submit | withdraw | approve | reject | edit | comment
   note       String?
-  versionId  String?  // 操作针对的稿件版本
+  versionId  String? // 操作针对的稿件版本
   before     String?
   after      String?
   createdAt  DateTime @default(now())
@@ -248,8 +256,8 @@ model ScheduleItem {
   publishAt    DateTime
   remindedAt   DateTime? // 到点提醒已发送
   publishedAt  DateTime?
-  postUrl      String?   // 人工回填的作品链接
-  failedReason String?   // 发布失败原因（如平台审核不通过）
+  postUrl      String? // 人工回填的作品链接
+  failedReason String? // 发布失败原因（如平台审核不通过）
   // 作品最新数据（一期人工回填，二期接口回收）；每次回填的快照在 PostMetric
   reads        Int?
   likes        Int?
@@ -267,11 +275,13 @@ model ScheduleItem {
   @@index([publishAt])
 }
 
-/** 作品数据快照：发布 24 小时、7 天各回填一次（M7-3）。 */
+/**
+ * 作品数据快照：发布 24 小时、7 天各回填一次（M7-3）。
+ */
 model PostMetric {
   id             String   @id @default(cuid())
   scheduleItemId String
-  checkpoint     String   // 24h | 7d
+  checkpoint     String // 24h | 7d
   reads          Int
   likes          Int
   saves          Int
@@ -299,35 +309,68 @@ model Conversation {
   accountId      String
   externalUserId String
   nickname       String?
+  kind           String             @default("dm") // dm 私信 | comment 作品评论
   sourcePostUrl  String?
   status         ConversationStatus @default(AI_HANDLING)
   audience       Audience?
-  intent         String?            // high | medium | low
+  intent         String? // high | medium | low
   handoffReason  String?
   summary        String?
+  unmatched      Int                @default(0) // AI 连续没在知识库里找到答案的轮数
+  agentId        String? // 接管的客服
+  waitingSince   DateTime? // 转人工的时间，用于响应时限
+  escalatedAt    DateTime? // 超时升级提醒已发送
+  lastMessageAt  DateTime           @default(now())
+  createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
   account  PlatformAccount @relation(fields: [accountId], references: [id])
+  agent    User?           @relation("ConversationAgent", fields: [agentId], references: [id])
   messages Message[]
   lead     Lead?
 
   @@unique([accountId, externalUserId])
+  @@index([status, lastMessageAt])
 }
 
 model Message {
   id             String   @id @default(cuid())
   conversationId String
-  sender         String   // customer | ai | agent | system
+  sender         String // customer | ai | agent | system
   text           String
-  blockedText    String?  // 被风控拦截的原回复
+  blockedText    String? // 被风控拦截的原回复
+  externalId     String?  @unique // 平台消息 ID，防止重复处理
+  delivery       String? // 发出的消息：to_send 待客服复制发送 | sending | sent | failed
+  meta           Json? // AI 判断：客群、意向、命中的 FAQ、转人工原因
+  authorId       String? // 客服回复的发送人
+  llmCallId      String?
   createdAt      DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+}
+
+/**
+ * 接收到的平台消息先原样落库再处理，处理失败定时重试，保证消息不丢（M8-1）。
+ */
+model InboundEvent {
+  id          String    @id @default(cuid())
+  channel     String // manual | api
+  externalId  String    @unique
+  payload     Json
+  status      String    @default("pending") // pending | done | failed
+  attempts    Int       @default(0)
+  error       String?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([status, createdAt])
 }
 
 model RiskHitLog {
   id        String   @id @default(cuid())
-  source    String   // draft | reply
+  source    String // draft | reply
   sourceId  String
   word      String
   level     String
@@ -341,10 +384,10 @@ model RiskWord {
   id         String    @id @default(cuid())
   word       String
   category   String
-  level      String    // block | warn | pass
+  level      String // block | warn | pass
   platform   Platform? // 空 = 所有平台通用
   whitelist  Boolean   @default(false) // 白名单词：即使命中其他规则也放行
-  suggestion String?   // 合规替换建议
+  suggestion String? // 合规替换建议
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
@@ -369,7 +412,7 @@ model Lead {
   sourcePlatform Platform?
   sourceAccount  String?
   sourcePostUrl  String?
-  wecomChannel   String?    // 渠道活码参数
+  wecomChannel   String? // 渠道活码参数
   nickname       String?
   name           String?
   phoneEnc       String?
@@ -418,13 +461,13 @@ model FollowUp {
 
 model Order {
   id           String   @id @default(cuid())
-  tool         String   // ktt | jielong | huacheng | manual
+  tool         String // ktt | jielong | huacheng | manual
   externalNo   String?
   leadId       String?
   amountCents  Int
   phoneHash    String?
   receiverHash String?
-  matchedBy    String?  // phone | receiver_address | manual
+  matchedBy    String? // phone | receiver_address | manual
   orderedAt    DateTime
   importedAt   DateTime @default(now())
 

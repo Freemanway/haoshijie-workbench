@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { DraftsModule } from './drafts/drafts.module';
 import { ReviewModule } from './drafts/review.module';
 import { HealthModule } from './health/health.module';
+import { InboxModule } from './inbox/inbox.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { LeadsModule } from './leads/leads.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     ReviewModule,
     TopicsModule,
     PublishScheduleModule,
+    InboxModule,
   ],
 })
 export class AppModule {}

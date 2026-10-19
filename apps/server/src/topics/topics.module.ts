@@ -130,11 +130,27 @@ export class TopicsService {
       categories: { C: cats.filter((c) => c.audience === 'C').map((c) => c.name), B: cats.filter((c) => c.audience === 'B').map((c) => c.name) },
       seasonNodes: nodesBetween(s.seasonNodes, addDays(weekOf, -7), addDays(weekEnd, 14)),
       lastWeek: published.map((p) => ({ title: p.draft.topic.title, reads: p.reads ?? 0, likes: p.likes ?? 0, saves: p.saves ?? 0 })),
-      // 收件箱（M8）上线后，按 FAQ 命中次数统计近 7 天私信高频问题
-      hotQuestions: [],
+      hotQuestions: await this.hotQuestions(),
       avoidTitles: [...new Set([...recent.map((t) => t.title), ...extraAvoid])],
       facts: items.map((i) => ({ title: i.title, content: i.content.slice(0, 200) })),
     };
+  }
+
+  /** 近 7 天私信高频问题：按 AI 回复时命中的 FAQ 计数。 */
+  async hotQuestions(days = 7, take = 10) {
+    const rows = await this.prisma.message.findMany({
+      where: { sender: 'ai', createdAt: { gte: new Date(Date.now() - days * 86_400_000) }, meta: { not: Prisma.DbNull } },
+      select: { meta: true },
+      take: 5000,
+    });
+    const n = new Map<string, number>();
+    for (const r of rows) for (const id of (r.meta as { faqIds?: string[] }).faqIds ?? []) n.set(id, (n.get(id) ?? 0) + 1);
+    const top = [...n.entries()].sort((a, b) => b[1] - a[1]).slice(0, take);
+    const faqs = await this.prisma.faqItem.findMany({ where: { id: { in: top.map(([id]) => id) } } });
+    return top.flatMap(([id, count]) => {
+      const f = faqs.find((x) => x.id === id);
+      return f ? [{ question: f.question, count }] : [];
+    });
   }
 
   /** 校验并修正 AI 给的选题：数量按配额截取，类别不在列表里的换成该客群第一类，日期落在本周内。 */
