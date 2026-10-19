@@ -12,6 +12,7 @@ import { InboxModule } from './inbox/inbox.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { LeadsModule } from './leads/leads.module';
 import { OrdersModule } from './orders/orders.module';
+import { ReportsModule } from './reports/reports.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RiskModule } from './risk/risk.module';
 import { ScheduleModule as PublishScheduleModule } from './schedule/schedule.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     RiskModule,
     LeadsModule,
     OrdersModule,
+    ReportsModule,
     DraftsModule,
     ReviewModule,
     TopicsModule,

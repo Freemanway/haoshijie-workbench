@@ -90,6 +90,9 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `POST /api/orders/import/preview`、`POST /api/orders/import` `{ tool, fileName, data(base64), mapping }` | 团购订单表（.xlsx / .csv）导入：先预览并猜字段映射，确认后导入；同订单号或同行内容不重复导入；映射按工具记住 | M11-1 |
 | `GET /api/orders?state=&tool=&q=&from=&to=&importId=&page=`、`POST …/:id/link` `{ leadId }`、`/unlink`、`/reveal` | 订单列表（脱敏、汇总）、待人工关联、人工关联（同手机号或同收货人加地址的其他未关联订单一起关联）、撤销、看明文（记日志） | M11-2 |
 | `POST /api/orders/manual`、`DELETE /api/orders/:id`、`GET /api/orders/imports`、`DELETE /api/orders/imports/:id` | B 端和线下成交人工录入（报价、合同、金额）、删除人工录入、导入记录、管理员整批删除 | M11-3 |
+| `GET /api/reports/dashboard?from=&to=&platform=&accountId=` | 数据周报看板：内容、客服、C/B 端客资、转化漏斗，并和等长的上一期环比；按北京时间实时计算 | M12-1、M12-2 |
+| `GET /api/reports`、`GET /api/reports/:id`、`POST /api/reports/generate` `{ kind, from?, to?, push }` | 周报 / 月报快照（含 AI 解读）；每周一 9:00 生成上周周报、每月 1 日生成上月月报并推送企业微信（管理员、只读、内容岗）；管理员可手动生成 | M12-3 |
+| `GET /api/reports/export?from=&to=&platform=&accountId=` | 明细 Excel：汇总、作品、会话，管理员另含脱敏的线索表（记导出日志）；看板导出 PDF 走浏览器打印 | M12-3 |
 
 ## 大模型
 

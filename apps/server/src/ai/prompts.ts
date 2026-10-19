@@ -504,3 +504,69 @@ ${facts(i.facts)}
       ? { advice: '先确认对方所在城市和渠道类型，再发供货方案和起订量说明。', scripts: ['你好，我是好时节招商，方便说下你在哪个城市、做什么渠道吗？我按你的情况发供货方案。', '我们产地直发，供货周期和起订量我整理了一份说明，发你看看～'] }
       : { advice: i.followUps.length ? '已经联系过，可以邀请进团购群看当季实拍和优惠。' : '先打个招呼，问清楚是自己吃还是送人，再推荐规格。', scripts: ['你好呀，我是好时节的小鲜～想问下是自己吃还是送人呢？我帮你推荐合适的规格。', '这周有新到的鲜果，团购群里有实拍和优惠，需要的话我拉你进群～'] },
 };
+
+// ---------- 周报 / 月报解读 ----------
+
+export interface ReportInsightInput {
+  period: string;
+  kind: 'week' | 'month';
+  /** 本期和上期的核心指标，已算好 */
+  kpi: { label: string; value: string; prev: string }[];
+  funnel: { audience: 'C' | 'B'; steps: { label: string; value: number }[] }[];
+  topPosts: { title: string; reads: number; rate: string; consults: number; leads: number }[];
+  categories: { category: string; posts: number; reads: number; consults: number; leads: number }[];
+  service: { handoffRate: string; firstResponse: string; reasons: { reason: string; count: number }[]; topQuestions: { question: string; count: number }[] };
+  leads: { audience: 'C' | 'B'; new: number; wecomRate: string; wonRate: string; deal: string }[];
+}
+
+const ReportInsightOut = z.object({
+  highlights: z.array(z.string().min(1)).min(1).max(4),
+  problems: z.array(z.string().min(1)).max(4),
+  suggestions: z.array(z.string().min(1)).min(1).max(4),
+});
+export type ReportInsightOut = z.infer<typeof ReportInsightOut>;
+
+/** 周报、月报的文字解读：本期亮点、问题、下期选题建议（PRD 8.3）。 */
+export const reportInsight: PromptTemplate<ReportInsightInput, ReportInsightOut> = {
+  name: 'report_insight',
+  version: 1,
+  temperature: 0.3,
+  system: `你是“好时节”无花果品牌的运营负责人，给老板写周报或月报的文字解读。
+highlights：本期亮点，1–4 条；problems：问题，0–4 条；suggestions：下期选题和运营建议，1–4 条。
+每条一句话、40 字以内，必须引用给出的数字（如“开箱类 3 篇带来 21 个咨询”），不要编造没给出的数据；数据为 0 或太少时直接说明样本不足。
+建议要具体到选题类别、作品方向或客服动作。
+只输出 JSON，不要输出其他文字。`,
+  user: (i) => `${i.kind === 'week' ? '周报' : '月报'}周期：${i.period}
+
+核心指标（本期 / 上期）：
+${i.kpi.map((k) => `- ${k.label}：${k.value} / ${k.prev}`).join('\n')}
+
+转化漏斗：
+${i.funnel.map((f) => `- ${f.audience} 端：${f.steps.map((s) => `${s.label} ${s.value}`).join(' → ')}`).join('\n')}
+
+作品排行（前 5）：
+${i.topPosts.map((p) => `- 《${p.title}》阅读 ${p.reads}，互动率 ${p.rate}，咨询 ${p.consults}，线索 ${p.leads}`).join('\n') || '（本期没有发布作品）'}
+
+选题类别：
+${i.categories.map((c) => `- ${c.category}：${c.posts} 篇，阅读 ${c.reads}，咨询 ${c.consults}，线索 ${c.leads}`).join('\n') || '（无）'}
+
+客服：转人工率 ${i.service.handoffRate}，人工首响 ${i.service.firstResponse}
+转人工原因：${i.service.reasons.map((r) => `${r.reason} ${r.count}`).join('；') || '无'}
+高频问题：${i.service.topQuestions.map((q) => `${q.question}（${q.count}）`).join('；') || '无'}
+
+客资：
+${i.leads.map((l) => `- ${l.audience} 端：新增线索 ${l.new}，加微率 ${l.wecomRate}，成交率 ${l.wonRate}，成交金额 ${l.deal}`).join('\n')}
+
+输出：{"highlights":["…"],"problems":["…"],"suggestions":["…"]}`,
+  output: ReportInsightOut,
+  mock: (i) => {
+    const top = i.topPosts[0];
+    const cat = [...i.categories].sort((a, b) => b.consults - a.consults)[0];
+    const q = i.service.topQuestions[0];
+    return {
+      highlights: [top ? `《${top.title}》阅读 ${top.reads}，带来 ${top.consults} 个咨询，是本期表现最好的作品。` : '本期还没有发布作品，数据样本不足。'],
+      problems: [i.service.reasons[0] ? `转人工率 ${i.service.handoffRate}，最多的原因是“${i.service.reasons[0].reason}”。` : `转人工率 ${i.service.handoffRate}。`],
+      suggestions: [cat ? `下期继续做“${cat.category}”类选题，本期 ${cat.posts} 篇带来 ${cat.consults} 个咨询。` : '下期按配额正常发布，积累数据后再调整选题方向。', ...(q ? [`把高频问题“${q.question}”写成一篇笔记，并补充到知识库。`] : [])],
+    };
+  },
+};
