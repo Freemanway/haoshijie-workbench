@@ -58,6 +58,7 @@ model PlatformAccount {
 
   schedules     ScheduleItem[]
   conversations Conversation[]
+  wecomChannels WecomChannel[]
 }
 
 model AuditLog {
@@ -394,6 +395,79 @@ model RiskWord {
   @@index([word])
 }
 
+// ---------- 企业微信私域（PRD 5.5） ----------
+
+/**
+ * 渠道活码：每个平台账号一个“联系我”二维码或获客助手链接，加微时按 state 认来源。
+ */
+model WecomChannel {
+  id          String   @id @default(cuid())
+  kind        String // qr 联系我二维码 | link 获客助手链接
+  name        String
+  accountId   String?
+  audience    Audience
+  staff       String[] // 接待成员的企业微信账号，多人时轮流分配
+  state       String   @unique // 渠道参数，加微回调里带回
+  remoteId    String? // 联系我 config_id 或获客链接 link_id
+  qrCode      String?
+  url         String?
+  tagId       String? // 来源标签
+  welcomeText String? // 为空用默认欢迎语
+  groupWayId  String? // 欢迎语附带的团购群活码
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  account  PlatformAccount? @relation(fields: [accountId], references: [id])
+  groupWay GroupJoinWay?    @relation(fields: [groupWayId], references: [id])
+  contacts WecomContact[]
+}
+
+/**
+ * 加了企业微信的客户（同一客户加多个成员各一条）。
+ */
+model WecomContact {
+  id             String    @id @default(cuid())
+  externalUserId String
+  staffId        String // 被添加的成员企业微信账号
+  name           String?
+  state          String?
+  channelId      String?
+  leadId         String?
+  welcome        String? // sent | failed | skipped
+  tagged         Boolean   @default(false)
+  addedAt        DateTime  @default(now())
+  removedAt      DateTime?
+
+  channel WecomChannel? @relation(fields: [channelId], references: [id])
+  lead    Lead?         @relation(fields: [leadId], references: [id])
+
+  @@unique([externalUserId, staffId])
+  @@index([channelId, addedAt])
+}
+
+/**
+ * 团购群活码（企业微信“加入群聊”）：最多 5 个群轮流，开启自动建群后群满自动建新群。
+ */
+model GroupJoinWay {
+  id           String    @id @default(cuid())
+  name         String
+  chatIds      String[]
+  autoCreate   Boolean   @default(true)
+  roomBaseName String?
+  roomBaseId   Int?
+  state        String    @unique
+  remoteId     String? // config_id
+  qrCode       String?
+  members      Json? // 最近一次检查的各群人数 { chatId: { name, count } }
+  checkedAt    DateTime?
+  fullAlertAt  DateTime?
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+
+  channels WecomChannel[]
+}
+
 // ---------- 线索与成交（PRD 6、9） ----------
 
 enum LeadStatus {
@@ -412,7 +486,7 @@ model Lead {
   sourcePlatform Platform?
   sourceAccount  String?
   sourcePostUrl  String?
-  wecomChannel   String? // 渠道活码参数
+  wecomChannel   String? // 来源渠道活码 WecomChannel.id
   nickname       String?
   name           String?
   phoneEnc       String?
@@ -425,12 +499,13 @@ model Lead {
   nextFollowAt   DateTime?
   createdAt      DateTime   @default(now())
 
-  conversation Conversation? @relation(fields: [conversationId], references: [id])
-  topic        Topic?        @relation(fields: [topicId], references: [id])
-  owner        User?         @relation("LeadOwner", fields: [ownerId], references: [id])
-  addresses    Address[]
-  followUps    FollowUp[]
-  orders       Order[]
+  conversation  Conversation?  @relation(fields: [conversationId], references: [id])
+  topic         Topic?         @relation(fields: [topicId], references: [id])
+  owner         User?          @relation("LeadOwner", fields: [ownerId], references: [id])
+  addresses     Address[]
+  followUps     FollowUp[]
+  orders        Order[]
+  wecomContacts WecomContact[]
 }
 
 model Address {

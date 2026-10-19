@@ -21,7 +21,7 @@ const CheckInput = z.object({
   text: z.string(),
   platform: z.nativeEnum(Platform).optional(),
   /** 带上来源时记录命中日志，用于每周高频词汇总 */
-  source: z.enum(['draft', 'reply']).optional(),
+  source: z.enum(['draft', 'reply', 'welcome']).optional(),
   sourceId: z.string().optional(),
 });
 

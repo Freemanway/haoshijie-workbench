@@ -75,6 +75,12 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 | `GET /api/inbox/conversations?status=&accountId=&mine=&q=`、`GET …/:id` | 统一收件箱：会话列表（五种状态计数）、会话详情 | M8-2 |
 | `POST …/:id/claim`、`/messages` `{ text }`、`/summary`、`/handoff`、`/release`、`/status`、`PATCH /api/inbox/messages/:id/sent` | 客服接管、回复（发出前风控）、客户摘要与建议回复、转人工、交还 AI、标记已引流/关闭、半自动消息标记已发送 | M8-4、M8-5 |
 | `GET/PUT /api/inbox/settings` | 接待设置：自动应答开关、人工工作时间、响应时限、转人工和非工作时间话术、C/B 引流话术 | M8-3、M8-4 |
+| `GET /api/wecom/status`、`GET/PUT /api/wecom/settings` | 企业微信配置状态；默认欢迎语（C/B）、团购群快满提醒人数 | M9-0、M9-2 |
+| `GET/POST /api/wecom/channels`、`PATCH/DELETE …/:id` | 渠道活码：每个平台账号一个“联系我”二维码或获客助手链接，自动建同名来源标签；删除时作废企业微信那边的码，保留加微记录 | M9-1 |
+| `GET /api/wecom/conversation-link/:conversationId` | 私信会话专属加微链接（获客链接带 `customer_channel=cv_<会话>`） | M9-2 |
+| `GET/POST /api/wecom/callback` | 企业微信回调（加解密同官方 WXBizMsgCrypt）：加微后发欢迎语（C 端可附团购群码）、打来源标签、关联或新建线索、私信会话标记已引流；员工备注手机号后按手机号并到已有线索 | M9-2 |
+| `GET /api/wecom/contacts?channelId=` | 最近加微的客户 | M9-2 |
+| `GET/POST /api/wecom/groups`、`PATCH/DELETE …/:id`、`POST …/:id/check` | 团购群活码（企业微信“加入群聊”，最多 5 个群，可开群满自动建群）；每小时刷新群人数，没开自动建群时群都快满了提醒换群 | M9-3 |
 | `POST /api/leads/parse-address` `{ raw }` | 整段地址拆成收件人、电话、省市区、详细地址，校验配送范围 | M10-2 |
 
 ## 大模型
@@ -90,6 +96,8 @@ DATABASE_URL=postgresql://hsj:hsj@localhost:5432/hsj_test pnpm --filter @hsj/ser
 - 定时任务（`CRON_ENABLED=false` 可全部关闭）：每分钟检查到点排期并提醒内容运营去发；每小时检查发布满 24 小时、7 天的作品并提醒回填数据；周四生成选题清单后也会提醒。
 - 收件箱：AI 每轮判断客群和意向，按 FAQ 和品牌资料回复，发出前过风控（拦截时重写一次，仍不合规就转人工）。客户要求人工、B 端谈价格合作、投诉售后、连续 2 轮答不上、回复无法通过风控时转人工；工作时间内超过响应时限提醒客服和管理员，非工作时间告知上班时间并引导留资。AI 回复命中的 FAQ 会计入每周选题的“私信高频问题”。手机端在企业微信里打开 `/m/inbox`。
 - 提醒走企业微信应用消息（`WECOM_*`），没配置时只写日志。
+- 私域引流：自建应用需在企业微信后台“客户联系 > API”里设为可调用应用；回调地址填 `https://<域名>/api/wecom/callback`，Token、EncodingAESKey 填进 `WECOM_CALLBACK_TOKEN`、`WECOM_CALLBACK_AES_KEY`。获客助手链接需企业开通获客助手。获客链接的 `customer_channel` 会在加微回调的 State 里带回（上线前用真实企业再核对一次）。
+- 手机号加密存储（`FIELD_ENCRYPTION_KEY`，AES-256-GCM），另存 HMAC 用于去重和匹配；生产环境必须配置密钥。
 - 稿件生成在进程内排队（同时最多 2 个）；多实例部署时换成 Redis + BullMQ。
 
 ## 约定
