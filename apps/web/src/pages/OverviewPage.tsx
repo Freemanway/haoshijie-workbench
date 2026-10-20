@@ -2,6 +2,7 @@ import { Alert, App, Button, Card, Col, DatePicker, Empty, List, Row, Select, Sp
 import dayjs, { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { BaselineCard } from '../components/BaselineCard';
 import { yuan } from '../components/DealForms';
 import { api, download, PLATFORM_LABEL } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -409,6 +410,22 @@ export function OverviewPage() {
               );
             })}
           </Row>
+          <Typography.Title level={5} style={{ margin: 0 }}>上线效果</Typography.Title>
+          <BaselineCard
+            cur={{
+              days: dayjs(data.to).diff(dayjs(data.from), 'day') + 1,
+              posts: data.kpi.posts,
+              consults: data.kpi.consults,
+              firstResponse: data.service.firstResponse,
+              conversations: data.service.conversations,
+              aiOnly: data.service.aiOnly,
+              leadsC: data.kpi.leadsC,
+              leadsB: data.kpi.leadsB,
+              wecomRateC: data.leads.C.wecomRate,
+              wonRateC: data.leads.C.wonRate,
+              wonRateB: data.leads.B.wonRate,
+            }}
+          />
           {!report && <Alert className="no-print" type="info" showIcon message="每周一 9:00 自动生成上周周报、每月 1 日生成上月月报，附 AI 解读并推送企业微信。看板数字随数据实时更新，报告快照保留生成当时的数字。" />}
         </>
       )}

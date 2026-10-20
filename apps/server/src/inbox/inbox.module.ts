@@ -142,7 +142,8 @@ export const sign = (secret: string, body: string | Buffer) => createHmac('sha25
 @Injectable()
 export class InboxService {
   private readonly log = new Logger('Inbox');
-  private readonly queue = new JobQueue(2);
+  /** 同时处理的消息数，即同时调用模型的上限；按模型的并发额度调，错峰季峰值见压测记录 */
+  private readonly queue: JobQueue;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -152,7 +153,9 @@ export class InboxService {
     private readonly provider: ProviderClient,
     private readonly config: ConfigService,
     private readonly leads: LeadsService,
-  ) {}
+  ) {
+    this.queue = new JobQueue(Math.max(1, Number(config.get('INBOX_CONCURRENCY', '8')) || 8));
+  }
 
   async idle() {
     await this.queue.idle();

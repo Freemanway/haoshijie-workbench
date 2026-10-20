@@ -1,0 +1,23 @@
+# 生产部署（单台云服务器）：接口服务 + 前端。数据库建议用云数据库 PostgreSQL 16（需开 pgvector 插件），
+# 填到 server.env 的 DATABASE_URL；没有云数据库时可取消下面 postgres 段的注释，用本机容器。
+# 用法见 docs/上线手册.md
+services:
+  server:
+    build: { context: .., dockerfile: deploy/Dockerfile.server }
+    image: hsj-server
+    env_file: server.env
+    restart: unless-stopped
+    logging: { driver: json-file, options: { max-size: 50m, max-file: '5' } }
+  web:
+    build: { context: .., dockerfile: deploy/Dockerfile.web }
+    image: hsj-web
+    depends_on: [server]
+    ports: ['127.0.0.1:8080:80']
+    restart: unless-stopped
+  # postgres:
+  #   image: pgvector/pgvector:pg16
+  #   environment: { POSTGRES_USER: hsj, POSTGRES_PASSWORD: 换成强密码, POSTGRES_DB: hsj }
+  #   volumes: [pgdata:/var/lib/postgresql/data]
+  #   restart: unless-stopped
+# volumes:
+#   pgdata:

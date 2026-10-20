@@ -189,4 +189,16 @@ describe('数据周报（M12）', () => {
     const logs = await prisma.auditLog.findMany({ where: { action: 'report.export' } });
     expect(logs).toHaveLength(2);
   });
+
+  it('上线前基线：管理员录入人工方式下的每周数字和目标，所有人可看，记日志', async () => {
+    expect((await http().get('/api/reports/baseline').set('Authorization', viewer).expect(200)).body).toEqual({});
+    const body = { period: '2026 年 9 月，人工方式', baseline: { weeklyPosts: 2, minutesPerPost: 90, weeklyConsults: 30, weeklyLeadsC: 5, wecomRateC: 40 }, target: { weeklyPosts: 5, weeklyLeadsC: 15 } };
+    await http().put('/api/reports/baseline').set('Authorization', viewer).send(body).expect(403);
+    await http().put('/api/reports/baseline').set('Authorization', admin).send({ ...body, baseline: { weeklyPosts: -1 } }).expect(400);
+    await http().put('/api/reports/baseline').set('Authorization', admin).send(body).expect(200);
+    const got = (await http().get('/api/reports/baseline').set('Authorization', viewer).expect(200)).body;
+    expect(got).toMatchObject({ period: '2026 年 9 月，人工方式', baseline: { weeklyPosts: 2, minutesPerPost: 90 }, target: { weeklyLeadsC: 15 } });
+    expect(got.recordedBy).toBeTruthy();
+    expect(await prisma.auditLog.count({ where: { action: 'report.baseline' } })).toBe(1);
+  });
 });

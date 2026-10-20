@@ -446,7 +446,7 @@ export function InboxPage() {
           <Card><Empty description="从左边选一个会话" /></Card>
         )}
       </div>
-      <style>{`@media (max-width: 900px) { .inbox-grid { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`@media (max-width: 900px) { .inbox-grid { grid-template-columns: minmax(0, 1fr) !important; } }`}</style>
 
       <PasteModal open={pasting} accounts={accounts} onClose={() => setPasting(false)} onDone={(c) => { setPasting(false); setTab(c.status); void load(); navigate(`/inbox/${c.id}`); }} />
       <SettingsModal open={setting} onClose={() => setSetting(false)} />

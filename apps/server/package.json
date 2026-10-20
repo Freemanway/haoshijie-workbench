@@ -13,7 +13,9 @@
     "postinstall": "prisma generate",
     "db:seed": "prisma db seed",
     "prisma:deploy": "prisma migrate deploy",
-    "llm:check": "tsx --env-file-if-exists=.env scripts/llm-check.ts"
+    "llm:check": "tsx --env-file-if-exists=.env scripts/llm-check.ts",
+    "loadtest": "tsx --env-file-if-exists=.env scripts/loadtest.ts",
+    "preflight": "tsx --env-file-if-exists=.env scripts/preflight.ts"
   },
   "dependencies": {
     "@hsj/shared": "workspace:*",

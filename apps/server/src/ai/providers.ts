@@ -56,9 +56,14 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 export class MockProvider implements LlmProvider {
   readonly name = 'mock';
   readonly model = 'mock';
-  constructor(private readonly respond: (messages: ChatMessage[]) => string) {}
+  constructor(
+    private readonly respond: (messages: ChatMessage[]) => string,
+    /** 模拟模型耗时（压测用），默认不等待 */
+    private readonly latencyMs = 0,
+  ) {}
 
   async chat(messages: ChatMessage[]): Promise<ChatResult> {
+    if (this.latencyMs) await new Promise((r) => setTimeout(r, this.latencyMs));
     const text = this.respond(messages);
     const chars = messages.reduce((n, m) => n + m.content.length, 0);
     return { text, inputTokens: Math.ceil(chars / 1.5), outputTokens: Math.ceil(text.length / 1.5) };
